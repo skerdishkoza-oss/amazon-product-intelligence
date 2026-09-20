@@ -29,6 +29,8 @@ export interface LabelDictionary {
     notFound: string[];
     /** Phrases that identify a bot challenge page. */
     challenge: string[];
+    /** Phrases that identify a valid search page with zero matching products. */
+    noResults: string[];
     /** "N bought in past month" style demand signal. */
     boughtInPastMonth: string[];
     /**

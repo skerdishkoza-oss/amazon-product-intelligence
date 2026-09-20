@@ -19,6 +19,9 @@ export interface SummaryInputs {
     discoveredProducts: number;
     searchPagesFetched: number;
     discoveryTruncated: boolean;
+    monitoringChecked: number;
+    monitoringCompared: number;
+    monitoringChanged: number;
     peakConcurrency: number;
     fetchStats: {
         blockedProductPages: number;
@@ -66,6 +69,9 @@ export function buildRunSummary(args: SummaryInputs): RunSummary {
         discoveredProducts: args.discoveredProducts,
         searchPagesFetched: args.searchPagesFetched,
         discoveryTruncated: args.discoveryTruncated,
+        monitoringChecked: args.monitoringChecked,
+        monitoringCompared: args.monitoringCompared,
+        monitoringChanged: args.monitoringChanged,
         peakConcurrency: args.peakConcurrency,
         primingRequests: args.fetchStats.primingRequests,
         blockRateProductPages: rate(args.fetchStats.blockedProductPages, args.fetchStats.productPageRequests),

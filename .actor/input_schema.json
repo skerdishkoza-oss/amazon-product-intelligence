@@ -7,13 +7,15 @@
         "mode": {
             "title": "Mode",
             "type": "string",
-            "description": "fast = cheap extraction from search/listing pages. detail = full product page extraction (default).",
+            "description": "fast = listing data only. detail = full product page. intelligence = detail plus selected offers/sellers. monitor = compare current product state with a previous dataset.",
             "editor": "select",
             "default": "detail",
-            "enum": ["fast", "detail"],
+            "enum": ["fast", "detail", "intelligence", "monitor"],
             "enumTitles": [
                 "Fast - listing data only, cheapest",
-                "Detail - full product page (default)"
+                "Detail - full product page (default)",
+                "Intelligence - offers and seller research",
+                "Monitor - compare with prior dataset"
             ]
         },
         "marketplace": {
@@ -22,8 +24,16 @@
             "description": "Which Amazon marketplace to use. Product URLs from a different marketplace are respected and reported per record.",
             "editor": "select",
             "default": "US",
-            "enum": ["US", "UK", "DE"],
-            "enumTitles": ["Amazon.com (US)", "Amazon.co.uk (UK)", "Amazon.de (DE)"]
+            "enum": ["US", "UK", "DE", "FR", "IT", "ES", "CA"],
+            "enumTitles": [
+                "Amazon.com (US)",
+                "Amazon.co.uk (UK)",
+                "Amazon.de (DE)",
+                "Amazon.fr (France)",
+                "Amazon.it (Italy)",
+                "Amazon.es (Spain)",
+                "Amazon.ca (Canada)"
+            ]
         },
         "asins": {
             "title": "ASINs",
@@ -36,7 +46,7 @@
         "urls": {
             "title": "Amazon URLs",
             "type": "array",
-            "description": "Product, search, category or best-seller URLs. Storefront/seller input is planned for V1.2 and currently returns a structured INVALID_INPUT row.",
+            "description": "Product, search, category, best-seller, storefront or seller URLs.",
             "editor": "requestListSources",
             "default": []
         },
@@ -46,6 +56,40 @@
             "description": "Search keywords. Each keyword is crawled up to 'Max search pages'.",
             "editor": "stringList",
             "default": []
+        },
+        "items": {
+            "title": "Raw JSON items",
+            "type": "array",
+            "description": "Advanced bulk input. Each object contains exactly one of asin, url or keyword. Optional per-row marketplace is supported for ASINs and keywords.",
+            "editor": "json",
+            "default": [],
+            "items": {
+                "type": "object",
+                "properties": {
+                    "asin": {
+                        "title": "ASIN",
+                        "description": "Ten-character Amazon product identifier.",
+                        "type": "string"
+                    },
+                    "url": {
+                        "title": "Amazon URL",
+                        "description": "Product or discovery URL.",
+                        "type": "string"
+                    },
+                    "keyword": {
+                        "title": "Keyword",
+                        "description": "Amazon search phrase.",
+                        "type": "string"
+                    },
+                    "marketplace": {
+                        "title": "Marketplace",
+                        "description": "Optional marketplace override for this row.",
+                        "type": "string",
+                        "enum": ["US", "UK", "DE", "FR", "IT", "ES", "CA"]
+                    }
+                },
+                "additionalProperties": false
+            }
         },
         "datasetId": {
             "title": "Input dataset ID",
@@ -96,6 +140,26 @@
             ],
             "sectionCaption": "Optional data"
         },
+        "includeOffers": {
+            "title": "Include all offers",
+            "type": "boolean",
+            "description": "Fetch the bounded All Offers surface for each product. Adds requests and offer billing events.",
+            "default": false
+        },
+        "maxOffersPerProduct": {
+            "title": "Max offers per product",
+            "type": "integer",
+            "description": "Hard limit on offers retained and billed for each product.",
+            "default": 10,
+            "minimum": 1,
+            "maximum": 100
+        },
+        "includeSellerDetails": {
+            "title": "Include public seller details",
+            "type": "boolean",
+            "description": "Fetch public seller profile, feedback and business fields for discovered sellers. No private identity inference.",
+            "default": false
+        },
         "maxProducts": {
             "title": "Max products",
             "type": "integer",
@@ -108,6 +172,7 @@
         "maxSearchPages": {
             "title": "Max search pages per keyword",
             "type": "integer",
+            "description": "Hard pagination limit for each keyword, category, best-seller or storefront discovery input.",
             "default": 5,
             "minimum": 1,
             "maximum": 20
@@ -122,6 +187,7 @@
         "maxRetries": {
             "title": "Max retries per request",
             "type": "integer",
+            "description": "Maximum bounded retry count before a fetch is reported as failed or blocked.",
             "default": 3,
             "minimum": 0,
             "maximum": 10
@@ -151,8 +217,16 @@
             "type": "string",
             "description": "Echo of the output schema your integration expects. A mismatch produces a run warning, never a failure.",
             "editor": "textfield",
-            "default": "1.1",
+            "default": "1.4",
             "sectionCaption": "Advanced"
+        },
+        "compareWithDatasetId": {
+            "title": "Previous dataset ID",
+            "type": "string",
+            "description": "Prior Amazon Product Intelligence dataset used for field-level monitoring changes. Required in monitor mode.",
+            "editor": "resourcePicker",
+            "resourceType": "dataset",
+            "resourcePermissions": ["READ"]
         }
     },
     "required": []

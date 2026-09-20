@@ -18,6 +18,8 @@ export interface RawActorInput {
     asins?: unknown;
     urls?: unknown;
     keywords?: unknown;
+    /** Raw JSON item rows: strings or objects containing one of asin/url/keyword. */
+    items?: unknown;
     datasetId?: string | null;
     datasetField?: string;
     deliveryCountry?: string | null;

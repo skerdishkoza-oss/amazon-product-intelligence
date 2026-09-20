@@ -12,11 +12,14 @@
 import type { BillingEvents } from '../billing/events.js';
 import { parseSearchPage } from '../amazon/parsers/search.js';
 import { parseProductPage } from '../amazon/parsers/product.js';
+import { parseOffers } from '../amazon/parsers/offers.js';
+import { parseSellerProfile, sellerProfileUrl } from '../amazon/parsers/seller.js';
 import { getMarketplace } from '../amazon/marketplace-config/index.js';
 import { canonicalProductUrl, classifyUrl, dedupeKey, locationKey, searchUrl } from '../input/normalizer.js';
 import type { ValidatedInput } from '../input/validate.js';
 import type { FetchResult, Fetcher } from '../fetch/types.js';
 import { scoreCompleteness } from '../quality/completeness.js';
+import { compareProduct, historyKey } from '../history/compare.js';
 import { RunAccounting } from '../output/accounting.js';
 import { DatasetSchemaError, type DatasetWriter } from '../output/dataset-writer.js';
 import {
@@ -24,14 +27,17 @@ import {
     buildProductRecord,
     emptyAvailability,
     emptyBuyBox,
+    emptyMonitoring,
+    emptyOffers,
     emptyProductContent,
     emptyRankings,
+    emptySellerProfiles,
     emptyVariants,
     locationBlock,
     qualityBlock,
 } from '../output/record-builder.js';
 import { FIELD_STATUS, FAILURE_REASON, RECORD_STATUS, type FailureReason } from '../types/status.js';
-import type { AvailabilityState, MarketplaceCode, ProductRecord, VariantItem } from '../types/output.js';
+import type { AvailabilityState, MarketplaceCode, OffersBlock, ProductRecord, SellerProfile, SellerProfilesBlock, VariantItem } from '../types/output.js';
 import { WorkQueue, type WorkItem } from './queue.js';
 
 export interface RunDeps {
@@ -45,6 +51,8 @@ export interface RunDeps {
     maxConcurrency?: number;
     /** Injected in tests so the degraded-health path does not really sleep. */
     sleep?: (ms: number) => Promise<void>;
+    /** Prior SUCCESS rows indexed by marketplace + ASIN for monitor mode. */
+    previousRecords?: Map<string, Record<string, unknown>>;
 }
 
 export interface RunOutcome {
@@ -55,6 +63,9 @@ export interface RunOutcome {
     aborted: number;
     abortReason: FailureReason | null;
     peakConcurrency: number;
+    monitoringChecked: number;
+    monitoringCompared: number;
+    monitoringChanged: number;
 }
 
 const DEFAULT_CONCURRENCY = 8;
@@ -112,18 +123,6 @@ export function planInputs(validated: ValidatedInput): WorkItem[] {
             continue;
         }
         const v = classified.value;
-        if (v.type === 'seller') {
-            push({
-                kind: 'PRODUCT',
-                key: `invalid|url|${raw}`,
-                ref: { type: 'seller', value: raw },
-                marketplace: v.marketplace,
-                asin: null,
-                url: raw,
-                invalidReason: FAILURE_REASON.SELLER_INPUT_NOT_AVAILABLE,
-            });
-            continue;
-        }
         if (v.asin !== null) {
             push({
                 kind: 'PRODUCT',
@@ -143,7 +142,11 @@ export function planInputs(validated: ValidatedInput): WorkItem[] {
                 ref: { type: v.type === 'keyword' ? 'keyword' : v.type, value: raw },
                 marketplace: v.marketplace,
                 asin: null,
-                url: v.canonical,
+                // A public /sp seller profile is not a catalog surface. Turn
+                // its seller ID into Amazon's /s?me= storefront listing.
+                url: v.type === 'seller' && v.sellerId !== null
+                    ? `https://${getMarketplace(v.marketplace).host}/s?me=${encodeURIComponent(v.sellerId)}`
+                    : v.canonical,
                 keyword: v.keyword,
             });
         }
@@ -190,9 +193,13 @@ export async function runPipeline(deps: RunDeps): Promise<RunOutcome> {
         discoveryTruncated: false,
         abortReason: null as FailureReason | null,
         peakConcurrency: 0,
+        monitoringChecked: 0,
+        monitoringCompared: 0,
+        monitoringChanged: 0,
     };
     let discoveredSequence = 0;
     const fastDiscoveries = new Map<string, ProductRecord['discoveredFrom']>();
+    const sellerProfileCache = new Map<string, Promise<SellerProfile | null>>();
 
     /** 9.5: the breaker lowers the live limit rather than killing the run outright. */
     const liveLimit = (): number => {
@@ -305,6 +312,19 @@ export async function runPipeline(deps: RunDeps): Promise<RunOutcome> {
 
         const warnings = [...parsed.warnings];
         let variants = parsed.variants ?? emptyVariants(input.variantMode);
+        let offers = emptyOffers(input.includeOffers);
+        let sellerProfiles = emptySellerProfiles(input.includeSellerDetails);
+
+        if (input.includeOffers) {
+            offers = await fetchOffers(item.marketplace, parsed.asin ?? item.asin ?? '', warnings);
+        }
+
+        if (input.includeSellerDetails) {
+            const sellerIds = new Set<string>();
+            if (parsed.buyBox.sellerId !== null) sellerIds.add(parsed.buyBox.sellerId);
+            for (const offer of offers.items) if (offer.sellerId !== null) sellerIds.add(offer.sellerId);
+            sellerProfiles = await fetchSellerProfiles(item.marketplace, [...sellerIds], warnings);
+        }
 
         // P1 brought forward: exact child price and stock, bounded by maxVariants.
         if (input.variantMode === 'price' && variants.items.length > 0) {
@@ -344,6 +364,12 @@ export async function runPipeline(deps: RunDeps): Promise<RunOutcome> {
             variants,
             product: parsed.product,
             media: parsed.media,
+            offers,
+            sellerProfiles,
+            monitoring: emptyMonitoring(
+                input.mode === 'monitor' || input.compareWithDatasetId !== null,
+                input.compareWithDatasetId,
+            ),
             location: locationBlock({
                 requestedCountry: input.deliveryCountry,
                 requestedPostalCode: input.postalCode,
@@ -351,7 +377,11 @@ export async function runPipeline(deps: RunDeps): Promise<RunOutcome> {
                 applied: fetched.locationApplied,
                 method: fetched.locationApplied ? 'SESSION_COOKIE' : 'NONE',
             }),
-            sources: { detailPage: fetched.finalUrl, priceStrategy: parsed.pricing.priceSource },
+            sources: {
+                detailPage: fetched.finalUrl,
+                ...(input.includeOffers ? { offersPage: offers.items[0]?.sourceUrl ?? offersUrl(item.marketplace, parsed.asin ?? item.asin ?? '') } : {}),
+                priceStrategy: parsed.pricing.priceSource,
+            },
             quality: qualityBlock({
                 fetchAttempts: fetched.attempts,
                 proxyTier: fetched.proxyTier,
@@ -363,7 +393,44 @@ export async function runPipeline(deps: RunDeps): Promise<RunOutcome> {
             scrapedAt: fetched.receivedAt,
         });
 
-        const committed = await finishRecord(item, record, mode === 'fast' ? 'basic' : 'detail', scoringMode);
+        if (input.compareWithDatasetId !== null) {
+            record.monitoring = compareProduct(
+                record,
+                deps.previousRecords?.get(historyKey(record.marketplace, record.asin)),
+                input.compareWithDatasetId,
+            );
+        }
+
+        const committed = await finishRecord(
+            item,
+            record,
+            input.mode === 'monitor' ? 'check' : mode === 'fast' ? 'basic' : 'detail',
+            scoringMode,
+        );
+        if (committed && record.offers.items.length > 0) {
+            const outcome = await billing.chargeOffers(RECORD_STATUS.SUCCESS, record.offers.items.length);
+            if (outcome.chargedCount < record.offers.items.length) {
+                record.offers.items = record.offers.items.slice(0, outcome.chargedCount);
+                record.offers.truncated = true;
+                if (record.offers.items.length === 0) record.offers.status = FIELD_STATUS.NOT_APPLICABLE;
+                record.quality.warnings.push(`OFFERS_NOT_CHARGED:${outcome.reason ?? 'UNKNOWN'}`);
+            }
+        }
+        if (committed && record.sellerProfiles.items.length > 0) {
+            const chargedProfiles: SellerProfile[] = [];
+            for (const profile of record.sellerProfiles.items) {
+                const outcome = await billing.chargeSellerDetail(RECORD_STATUS.SUCCESS);
+                if (outcome.charged) chargedProfiles.push(profile);
+                else record.quality.warnings.push(`SELLER_DETAIL_NOT_CHARGED:${profile.sellerId}:${outcome.reason ?? 'UNKNOWN'}`);
+            }
+            record.sellerProfiles.items = chargedProfiles;
+            if (chargedProfiles.length === 0) record.sellerProfiles.status = FIELD_STATUS.NOT_APPLICABLE;
+        }
+        if (committed && input.mode === 'monitor') {
+            state.monitoringChecked += 1;
+            if (record.monitoring.compared) state.monitoringCompared += 1;
+            if (record.monitoring.changed) state.monitoringChanged += 1;
+        }
         if (committed && input.variantMode === 'price') {
             // The base product is charged first. Exact child data is revealed
             // only for variant-detail events that the platform actually
@@ -379,6 +446,77 @@ export async function runPipeline(deps: RunDeps): Promise<RunOutcome> {
                 }
             }
         }
+    }
+
+    function offersUrl(marketplace: MarketplaceCode, asin: string): string {
+        const cfg = getMarketplace(marketplace);
+        return `https://${cfg.host}${cfg.paths.offers.replace('{asin}', asin)}`;
+    }
+
+    async function fetchOffers(
+        marketplace: MarketplaceCode,
+        asin: string,
+        warnings: string[],
+    ): Promise<OffersBlock> {
+        const cfg = getMarketplace(marketplace);
+        const url = offersUrl(marketplace, asin);
+        const result = await fetcher.fetch({
+            url,
+            marketplace,
+            postalCode: input.postalCode,
+            deliveryCountry: input.deliveryCountry,
+            label: 'OFFERS',
+        });
+        if (!result.ok) {
+            warnings.push(`OFFERS_FETCH_FAILED:${result.reason}`);
+            return emptyOffers(true, result.notFound ? FIELD_STATUS.NOT_PRESENT : FIELD_STATUS.PARSER_MISS);
+        }
+        return parseOffers({ html: result.html, cfg, sourceUrl: result.finalUrl, maxOffers: input.maxOffersPerProduct });
+    }
+
+    async function fetchSellerProfiles(
+        marketplace: MarketplaceCode,
+        sellerIds: string[],
+        warnings: string[],
+    ): Promise<SellerProfilesBlock> {
+        if (sellerIds.length === 0) return emptySellerProfiles(true, FIELD_STATUS.NOT_PRESENT);
+        const cfg = getMarketplace(marketplace);
+        const items: SellerProfile[] = [];
+        for (const sellerId of sellerIds.slice(0, input.maxOffersPerProduct)) {
+            if (billing.isCapReached()) break;
+            const cacheKey = `${marketplace}|${sellerId}`;
+            let pending = sellerProfileCache.get(cacheKey);
+            if (pending === undefined) {
+                pending = (async (): Promise<SellerProfile | null> => {
+                    const url = sellerProfileUrl(cfg, sellerId);
+                    const result = await fetcher.fetch({
+                        url,
+                        marketplace,
+                        postalCode: input.postalCode,
+                        deliveryCountry: input.deliveryCountry,
+                        label: 'SELLER',
+                    });
+                    if (!result.ok) {
+                        warnings.push(`SELLER_FETCH_FAILED:${sellerId}:${result.reason}`);
+                        return null;
+                    }
+                    const profile = parseSellerProfile({ html: result.html, cfg, sellerId, sourceUrl: result.finalUrl });
+                    if (profile.status !== FIELD_STATUS.EXTRACTED) {
+                        warnings.push(`SELLER_PARSER_MISS:${sellerId}`);
+                        return null;
+                    }
+                    return profile;
+                })();
+                sellerProfileCache.set(cacheKey, pending);
+            }
+            const profile = await pending;
+            if (profile !== null) items.push(profile);
+        }
+        return {
+            requested: true,
+            items,
+            status: items.length > 0 ? FIELD_STATUS.EXTRACTED : FIELD_STATUS.PARSER_MISS,
+        };
     }
 
     /** One extra request per child; billing is committed after the base product. */
@@ -644,7 +782,7 @@ export async function runPipeline(deps: RunDeps): Promise<RunOutcome> {
     async function finishRecord(
         item: WorkItem,
         record: ProductRecord,
-        event: 'basic' | 'detail',
+        event: 'basic' | 'detail' | 'check',
         scoring: 'fast' | 'detail' | 'intelligence',
     ): Promise<boolean> {
         const completeness = scoreCompleteness(record, scoring);
@@ -656,7 +794,9 @@ export async function runPipeline(deps: RunDeps): Promise<RunOutcome> {
             // Charge derives from the record's own status, never the caller's intent.
             const outcome = event === 'basic'
                 ? await billing.chargeProductBasic(record.status)
-                : await billing.chargeProductDetail(record.status);
+                : event === 'check'
+                    ? await billing.chargeProductCheck(record.status)
+                    : await billing.chargeProductDetail(record.status);
             if (!outcome.charged) {
                 writer.discard(record);
                 const reason = outcome.reason === 'CAP_REACHED'
@@ -777,6 +917,9 @@ export async function runPipeline(deps: RunDeps): Promise<RunOutcome> {
         aborted: pending.length,
         abortReason: state.abortReason,
         peakConcurrency: state.peakConcurrency,
+        monitoringChecked: state.monitoringChecked,
+        monitoringCompared: state.monitoringCompared,
+        monitoringChanged: state.monitoringChanged,
     };
 }
 

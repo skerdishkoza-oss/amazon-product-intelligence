@@ -30,7 +30,13 @@ function harness(capAfter?: number): Harness {
     return { sink: new MemorySink(), accounting: new RunAccounting(), billing: new BillingEvents(backend), backend };
 }
 
-async function run(h: Harness, rawInput: Parameters<typeof validateInput>[0], fetcher: ScriptedFetcher, maxConcurrency = 4) {
+async function run(
+    h: Harness,
+    rawInput: Parameters<typeof validateInput>[0],
+    fetcher: ScriptedFetcher,
+    maxConcurrency = 4,
+    previousRecords?: Map<string, Record<string, unknown>>,
+) {
     const validated = validateInput(rawInput);
     return runPipeline({
         validated,
@@ -41,6 +47,7 @@ async function run(h: Harness, rawInput: Parameters<typeof validateInput>[0], fe
         log: () => {},
         maxConcurrency,
         sleep: async () => {},
+        previousRecords,
     });
 }
 
@@ -57,7 +64,7 @@ test('every input is accounted for and only successes are charged', async () => 
         {
             marketplace: 'US',
             asins: ['B0GOOD0001', 'B0GOOD0002', 'B0BLOCK001', 'B0MISSING1', 'TOO-SHORT'],
-            urls: ['https://www.amazon.fr/dp/B0FRENCH01', 'https://www.amazon.com/dp/B0GOOD0003'],
+            urls: ['https://www.amazon.com.au/dp/B0AUSSIE01', 'https://www.amazon.com/dp/B0GOOD0003'],
             postalCode: '10001',
         },
         fetcher,
@@ -171,16 +178,110 @@ test('a blocked search page yields one BLOCKED row for the keyword', async () =>
     assert.equal(h.billing.stats().successfulPaidEvents, 0);
 });
 
-test('storefront URLs fail explicitly until seller discovery ships', async () => {
+test('storefront URLs discover products through the listing parser', async () => {
     const h = harness();
     const fetcher = new ScriptedFetcher();
-    await run(h, { urls: ['https://www.amazon.com/stores/ExampleBrand/page/ABC123'] }, fetcher);
+    await run(h, { urls: ['https://www.amazon.com/stores/ExampleBrand/page/ABC123'], maxSearchPages: 1 }, fetcher);
 
     h.accounting.assertInvariant();
-    assert.equal(fetcher.requests.length, 0);
-    assert.equal(h.accounting.snapshot().invalidInput, 1);
-    assert.equal(h.sink.records[0]?.status, 'INVALID_INPUT');
-    assert.equal((h.sink.records[0] as { reason?: string }).reason, 'SELLER_INPUT_NOT_AVAILABLE');
+    assert.equal(fetcher.requests.filter((request) => request.label === 'SEARCH').length, 1);
+    assert.equal(h.accounting.snapshot().invalidInput, 0);
+    assert.equal(products(h).length, 3);
+    assert.ok(products(h).every((record) => record.discoveredFrom[0]?.type === 'seller'));
+});
+
+test('seller profile URLs are converted to seller catalog discovery URLs', async () => {
+    const h = harness();
+    const fetcher = new ScriptedFetcher();
+    await run(h, { urls: ['https://www.amazon.com/sp?seller=A1EXAMPLE01'], maxSearchPages: 1 }, fetcher);
+
+    const search = fetcher.requests.find((request) => request.label === 'SEARCH');
+    assert.ok(search);
+    const url = new URL(search.url);
+    assert.equal(url.pathname, '/s');
+    assert.equal(url.searchParams.get('me'), 'A1EXAMPLE01');
+    assert.equal(products(h).length, 3);
+});
+
+test('intelligence mode emits bounded offers and public seller profiles with exact billing', async () => {
+    const h = harness();
+    const fetcher = new ScriptedFetcher();
+    await run(h, {
+        marketplace: 'US',
+        asins: ['B0CX23V2ZK'],
+        mode: 'intelligence',
+        includeOffers: true,
+        includeSellerDetails: true,
+        maxOffersPerProduct: 2,
+    }, fetcher);
+
+    h.accounting.assertInvariant();
+    const record = products(h)[0];
+    assert.ok(record);
+    assert.equal(record.offers.items.length, 2);
+    assert.equal(record.sellerProfiles.items.length, 2);
+    assert.deepEqual(fetcher.requests.map((request) => request.label), ['PRODUCT', 'OFFERS', 'SELLER', 'SELLER']);
+    assert.deepEqual(h.billing.stats().byEvent, {
+        'product-detail': 1,
+        offer: 2,
+        'seller-detail': 2,
+    });
+    assert.equal(validateRecord(record).valid, true);
+});
+
+test('offer values past the charge cap are not leaked into the dataset', async () => {
+    const h = harness(2);
+    await run(h, {
+        marketplace: 'US',
+        asins: ['B0CX23V2ZK'],
+        mode: 'intelligence',
+        includeOffers: true,
+        maxOffersPerProduct: 2,
+    }, new ScriptedFetcher());
+
+    const record = products(h)[0];
+    assert.ok(record);
+    assert.equal(record.offers.items.length, 1, 'one product event plus one offer fit under the cap');
+    assert.equal(record.offers.truncated, true);
+    assert.deepEqual(h.billing.stats().byEvent, { 'product-detail': 1, offer: 1 });
+    assert.equal(validateRecord(record).valid, true);
+});
+
+test('monitor mode compares prior state and bills every completed check', async () => {
+    const initial = harness();
+    await run(initial, { marketplace: 'US', asins: ['B0CX23V2ZK'] }, new ScriptedFetcher());
+    const current = products(initial)[0];
+    assert.ok(current);
+    const previous = structuredClone(current) as unknown as Record<string, unknown>;
+    const pricing = previous.pricing as Record<string, unknown>;
+    pricing.currentPrice = { amount: 29.99, currency: 'USD', raw: '$29.99' };
+
+    const h = harness();
+    await run(
+        h,
+        { marketplace: 'US', asins: ['B0CX23V2ZK'], mode: 'monitor', compareWithDatasetId: 'prior-dataset' },
+        new ScriptedFetcher(),
+        4,
+        new Map([['US|B0CX23V2ZK', previous]]),
+    );
+
+    const record = products(h)[0];
+    assert.ok(record);
+    assert.equal(record.monitoring.compared, true);
+    assert.equal(record.monitoring.changed, true);
+    const priceChange = record.monitoring.changes.find((change) => change.type === 'PRICE_CHANGED');
+    assert.equal(priceChange?.percentChange, -16.67);
+    assert.deepEqual(h.billing.stats().byEvent, { 'product-check': 1 });
+    const outcome = await run(
+        harness(),
+        { marketplace: 'US', asins: ['B0CX23V2ZK'], mode: 'monitor', compareWithDatasetId: 'missing-prior' },
+        new ScriptedFetcher(),
+        4,
+        new Map(),
+    );
+    assert.equal(outcome.monitoringChecked, 1);
+    assert.equal(outcome.monitoringCompared, 0);
+    assert.equal(outcome.monitoringChanged, 0);
 });
 
 test('variant discover mode costs zero extra requests (C13)', async () => {
@@ -276,6 +377,9 @@ test('the charge cap winds the run down and the summary still balances (C8)', as
         discoveredProducts: outcome.discovered,
         searchPagesFetched: outcome.searchPagesFetched,
         discoveryTruncated: outcome.discoveryTruncated,
+        monitoringChecked: outcome.monitoringChecked,
+        monitoringCompared: outcome.monitoringCompared,
+        monitoringChanged: outcome.monitoringChanged,
         peakConcurrency: outcome.peakConcurrency,
         fetchStats: fetcher.stats(),
         billing: h.billing.stats(),

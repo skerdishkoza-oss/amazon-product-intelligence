@@ -26,7 +26,7 @@ export function classifyPage(args: {
     statusCode: number;
     cfg: MarketplaceConfig;
     dom?: Dom;
-    expected?: 'PRODUCT' | 'SEARCH';
+    expected?: 'PRODUCT' | 'SEARCH' | 'AUXILIARY';
 }): PageClassification {
     const { html, statusCode, cfg } = args;
     const lower = html.toLowerCase();
@@ -58,6 +58,16 @@ export function classifyPage(args: {
         return { pageType: 'UNKNOWN', blocked: false, notFound: false, reason: FAILURE_REASON.HTTP_STATUS };
     }
 
+    // Offer AJAX fragments and seller profile pages do not contain the product
+    // anchors used below. Once challenge/error checks pass, accept a plausible
+    // HTML fragment and let the feature parser report NOT_PRESENT/PARSER_MISS.
+    if (args.expected === 'AUXILIARY') {
+        if (html.trim().length >= 200) {
+            return { pageType: 'UNKNOWN', blocked: false, notFound: false, reason: null };
+        }
+        return { pageType: 'UNKNOWN', blocked: true, notFound: false, reason: FAILURE_REASON.EMPTY_TEMPLATE };
+    }
+
     // 3. Unexpectedly tiny or template-only responses. Amazon serves these
     // under load, and treating them as a valid empty page is how competitors
     // end up emitting rows full of nulls.
@@ -68,8 +78,11 @@ export function classifyPage(args: {
     const $ = args.dom ?? load(html);
 
     if (args.expected === 'SEARCH') {
-        const hasResults = $('[data-component-type="s-search-result"], .s-result-item[data-asin]').length > 0;
-        const hasNoResultsMessage = lower.includes('no results for') || lower.includes('keine ergebnisse');
+        const hasResults = $(
+            '[data-component-type="s-search-result"], .s-result-item[data-asin], .stores-widget-btf [data-asin], '
+            + '[data-testid="grid-container"] [data-asin], .ProductGridItem__itemOuter__KUtvv[data-asin]',
+        ).length > 0;
+        const hasNoResultsMessage = cfg.labels.noResults.some((phrase) => lower.includes(phrase.toLowerCase()));
         if (hasResults) return { pageType: 'SEARCH', blocked: false, notFound: false, reason: null };
         if (hasNoResultsMessage) return { pageType: 'SEARCH', blocked: false, notFound: true, reason: FAILURE_REASON.URL_NO_ASIN };
         return { pageType: 'UNKNOWN', blocked: true, notFound: false, reason: FAILURE_REASON.EMPTY_TEMPLATE };

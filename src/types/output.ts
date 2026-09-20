@@ -1,5 +1,5 @@
 /**
- * Output schema v1.1. Spec sections 5.2, 5.4, 5.5, 6.x, Appendix A and B.
+ * Output schema v1.4. Spec sections 5.2, 5.4, 5.5, 6.x, 7, Appendix A and B.
  *
  * Every block that can fail carries its own `status`. A null value without a
  * status is a bug, and the JSON-Schema golden test in quality/validation.ts
@@ -9,9 +9,9 @@
 import type { Money } from './money.js';
 import type { FailureReason, FieldStatus, RecordStatus } from './status.js';
 
-export const SCHEMA_VERSION = '1.1';
+export const SCHEMA_VERSION = '1.4';
 
-export type MarketplaceCode = 'US' | 'UK' | 'DE';
+export type MarketplaceCode = 'US' | 'UK' | 'DE' | 'FR' | 'IT' | 'ES' | 'CA';
 
 export type ProxyTier = 'DATACENTER' | 'RESIDENTIAL' | 'EXTERNAL' | 'BROWSER' | 'NONE';
 
@@ -170,6 +170,92 @@ export interface MediaBlock {
     status: FieldStatus;
 }
 
+export type OfferCondition = 'NEW' | 'USED' | 'REFURBISHED' | 'COLLECTIBLE' | 'UNKNOWN';
+
+export interface OfferItem {
+    sellerId: string | null;
+    sellerName: string | null;
+    condition: OfferCondition;
+    itemPrice: Money | null;
+    shippingPrice: Money | null;
+    landedPrice: Money | null;
+    primeEligible: boolean | null;
+    fulfillment: Fulfillment;
+    deliveryText: string | null;
+    sellerRating: number | null;
+    sellerFeedbackCount: number | null;
+    sourceUrl: string;
+    status: FieldStatus;
+}
+
+export interface OffersBlock {
+    requested: boolean;
+    totalCount: number | null;
+    items: OfferItem[];
+    truncated: boolean;
+    status: FieldStatus;
+}
+
+export interface SellerFeedbackWindow {
+    positivePercent: number | null;
+    neutralPercent: number | null;
+    negativePercent: number | null;
+    count: number | null;
+}
+
+export interface SellerProfile {
+    sellerId: string;
+    sellerName: string | null;
+    businessName: string | null;
+    businessAddress: string | null;
+    rating: number | null;
+    feedbackCount: number | null;
+    feedback30Days: SellerFeedbackWindow | null;
+    feedback90Days: SellerFeedbackWindow | null;
+    feedback365Days: SellerFeedbackWindow | null;
+    legalIdentifiers: Record<string, string>;
+    sourceUrl: string;
+    status: FieldStatus;
+}
+
+export interface SellerProfilesBlock {
+    requested: boolean;
+    items: SellerProfile[];
+    status: FieldStatus;
+}
+
+export type ChangeType =
+    | 'PRICE_CHANGED'
+    | 'DISCOUNT_CHANGED'
+    | 'COUPON_ADDED'
+    | 'COUPON_REMOVED'
+    | 'OUT_OF_STOCK'
+    | 'BACK_IN_STOCK'
+    | 'BUY_BOX_CHANGED'
+    | 'SELLER_COUNT_CHANGED'
+    | 'BSR_CHANGED'
+    | 'RATING_CHANGED'
+    | 'REVIEW_COUNT_CHANGED'
+    | 'PRODUCT_REMOVED_OR_UNAVAILABLE';
+
+export interface ProductChange {
+    type: ChangeType;
+    field: string;
+    before: unknown;
+    after: unknown;
+    percentChange: number | null;
+}
+
+export interface MonitoringBlock {
+    requested: boolean;
+    compared: boolean;
+    previousDatasetId: string | null;
+    previousScrapedAt: string | null;
+    changed: boolean;
+    changes: ProductChange[];
+    status: FieldStatus;
+}
+
 /** C4. `applied: false` means the price is whatever an unlocated session sees. */
 export interface LocationBlock {
     requestedCountry: string | null;
@@ -231,6 +317,9 @@ export interface ProductRecord {
     variants: VariantsBlock;
     product: ProductContentBlock;
     media: MediaBlock;
+    offers: OffersBlock;
+    sellerProfiles: SellerProfilesBlock;
+    monitoring: MonitoringBlock;
     location: LocationBlock;
     sources: SourcesBlock;
     quality: QualityBlock;
@@ -287,6 +376,9 @@ export interface RunSummary {
     searchPagesFetched: number;
     /** True when discovery hit maxProducts and stopped enqueuing. */
     discoveryTruncated: boolean;
+    monitoringChecked: number;
+    monitoringCompared: number;
+    monitoringChanged: number;
     peakConcurrency: number;
     primingRequests: number;
     blockRateProductPages: number;

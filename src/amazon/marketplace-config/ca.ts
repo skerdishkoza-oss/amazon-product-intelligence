@@ -1,41 +1,37 @@
 import type { MarketplaceConfig } from './types.js';
 
-export const US: MarketplaceConfig = {
-    code: 'US',
-    host: 'www.amazon.com',
-    locale: 'en-US',
-    language: 'en_US',
-    currency: 'USD',
+export const CA: MarketplaceConfig = {
+    code: 'CA',
+    host: 'www.amazon.ca',
+    locale: 'en-CA',
+    language: 'en_CA',
+    currency: 'CAD',
     currencyScale: 100,
     numberFormat: {
         decimalSeparator: '.',
         thousandsSeparator: ',',
-        currencySymbols: ['$', 'USD', 'US$'],
+        currencySymbols: ['$', 'CAD', 'CDN$', 'CA$'],
     },
     labels: {
-        bsr: ['Best Sellers Rank', 'Amazon Best Sellers Rank'],
+        bsr: ['Best Sellers Rank', 'Amazon Best Sellers Rank', 'Classement des meilleures ventes'],
         categoryPathSeparator: ' in ',
         availability: [
-            { state: 'OUT_OF_STOCK', patterns: ['currently unavailable', 'out of stock', 'temporarily out of stock'] },
-            { state: 'LIMITED_STOCK', patterns: ['only', 'left in stock'] },
-            { state: 'PREORDER', patterns: ['pre-order', 'available for pre-order'] },
+            { state: 'OUT_OF_STOCK', patterns: ['currently unavailable', 'out of stock', 'actuellement indisponible'] },
+            { state: 'LIMITED_STOCK', patterns: ['only', 'left in stock', 'plus que'] },
+            { state: 'PREORDER', patterns: ['pre-order', 'précommande'] },
             { state: 'BACKORDER', patterns: ['usually ships within', 'on backorder'] },
-            { state: 'IN_STOCK', patterns: ['in stock', 'available now'] },
+            { state: 'IN_STOCK', patterns: ['in stock', 'en stock'] },
         ],
-        soldBy: ['Sold by', 'Ships from and sold by'],
-        shipsFrom: ['Ships from', 'Dispatches from'],
-        notFound: [
-            "we're sorry. the web address you entered is not a functioning page",
-            'page not found',
-            'looking for something?',
-        ],
+        soldBy: ['Sold by', 'Ships from and sold by', 'Vendu par'],
+        shipsFrom: ['Ships from', 'Dispatches from', 'Expédié par'],
+        notFound: ['page not found', 'looking for something?', 'page introuvable'],
         challenge: [
             'enter the characters you see below',
             "sorry, we just need to make sure you're not a robot",
             'to discuss automated access to amazon data',
         ],
-        noResults: ['no results for', 'we need a little more information to find what you searched for'],
-        boughtInPastMonth: ['bought in past month'],
+        noResults: ['no results for', 'aucun résultat'],
+        boughtInPastMonth: ['bought in past month', 'achetés au cours du mois dernier'],
         demandMultipliers: [
             { suffix: 'K', factor: 1000 },
             { suffix: 'M', factor: 1_000_000 },

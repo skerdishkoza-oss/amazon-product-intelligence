@@ -37,7 +37,13 @@ export interface SearchPageResult {
     totalResultsText: string | null;
 }
 
-const CARD_SELECTOR = '[data-component-type="s-search-result"][data-asin], .s-result-item[data-asin]:not(.AdHolder)';
+const CARD_SELECTOR = [
+    '[data-component-type="s-search-result"][data-asin]',
+    '.s-result-item[data-asin]:not(.AdHolder)',
+    '.stores-widget-btf [data-asin]',
+    '[data-testid="grid-container"] [data-asin]',
+    '.ProductGridItem__itemOuter__KUtvv[data-asin]',
+].join(', ');
 
 export function parseSearchPage(args: {
     html: string;

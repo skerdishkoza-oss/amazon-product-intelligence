@@ -11,9 +11,9 @@ import { isSupportedMarketplace, SUPPORTED_MARKETPLACES } from '../amazon/market
 import { INPUT_DEFAULTS, type ActorInput, type RawActorInput, type RunMode } from '../types/input.js';
 import type { MarketplaceCode, VariantMode } from '../types/output.js';
 import { FAILURE_REASON, type FailureReason } from '../types/status.js';
-import { normalizeAsin } from './normalizer.js';
+import { canonicalProductUrl, normalizeAsin, searchUrl } from './normalizer.js';
 
-const MODES: RunMode[] = ['fast', 'detail'];
+const MODES: RunMode[] = ['fast', 'detail', 'intelligence', 'monitor'];
 const VARIANT_MODES: VariantMode[] = ['none', 'discover', 'price', 'full'];
 
 export class InputError extends Error {
@@ -87,7 +87,7 @@ export function validateInput(raw: RawActorInput | null | undefined): ValidatedI
     const marketplaceRaw = (src.marketplace ?? INPUT_DEFAULTS.marketplace).toUpperCase();
     if (!isSupportedMarketplace(marketplaceRaw)) {
         throw new InputError(
-            `marketplace "${marketplaceRaw}" is not supported in V1. Supported: ${SUPPORTED_MARKETPLACES.join(', ')}`,
+            `marketplace "${marketplaceRaw}" is not supported. Supported: ${SUPPORTED_MARKETPLACES.join(', ')}`,
         );
     }
     const marketplace = marketplaceRaw as MarketplaceCode;
@@ -97,8 +97,53 @@ export function validateInput(raw: RawActorInput | null | undefined): ValidatedI
         throw new InputError(`variantMode must be one of ${VARIANT_MODES.join(', ')}`);
     }
 
+    const asinCandidates = asStringArray(src.asins, 'asins');
+    const urls = asStringArray(src.urls, 'urls');
+    // A single API keyword such as "coffee maker" is one search phrase, not
+    // two separate keywords. Arrays remain the unambiguous multi-keyword form.
+    const keywords = asStringArray(src.keywords, 'keywords', /[;\n]+/);
+
+    if (src.items !== undefined && src.items !== null) {
+        if (!Array.isArray(src.items)) throw new InputError('items must be a JSON array');
+        for (const rawItem of src.items) {
+            if (typeof rawItem === 'string') {
+                const value = rawItem.trim();
+                if (/^https?:\/\//i.test(value)) urls.push(value);
+                else asinCandidates.push(value);
+                continue;
+            }
+            if (rawItem === null || typeof rawItem !== 'object' || Array.isArray(rawItem)) {
+                rejected.push({ type: 'url', value: JSON.stringify(rawItem) ?? String(rawItem), reason: FAILURE_REASON.URL_UNSUPPORTED });
+                continue;
+            }
+            const row = rawItem as Record<string, unknown>;
+            const supplied = ['asin', 'url', 'keyword'].filter((field) => typeof row[field] === 'string' && String(row[field]).trim() !== '');
+            if (supplied.length !== 1) {
+                rejected.push({ type: 'url', value: JSON.stringify(rawItem), reason: FAILURE_REASON.URL_UNSUPPORTED });
+                continue;
+            }
+            const itemMarketplaceRaw = typeof row.marketplace === 'string' ? row.marketplace.toUpperCase() : marketplace;
+            if (!isSupportedMarketplace(itemMarketplaceRaw)) {
+                rejected.push({ type: 'url', value: JSON.stringify(rawItem), reason: FAILURE_REASON.MARKETPLACE_UNSUPPORTED });
+                continue;
+            }
+            const field = supplied[0]!;
+            const value = String(row[field]).trim();
+            if (field === 'url') urls.push(value);
+            else if (field === 'keyword') {
+                if (itemMarketplaceRaw === marketplace) keywords.push(value);
+                else urls.push(searchUrl(itemMarketplaceRaw, value));
+            } else {
+                const normalized = normalizeAsin(value);
+                if (normalized === null) rejected.push({ type: 'asin', value, reason: FAILURE_REASON.ASIN_MALFORMED });
+                else if (itemMarketplaceRaw === marketplace) asinCandidates.push(normalized);
+                else urls.push(canonicalProductUrl(itemMarketplaceRaw, normalized));
+            }
+        }
+    }
+
     const asins: string[] = [];
-    for (const candidate of asStringArray(src.asins, 'asins')) {
+    for (const candidate of asinCandidates) {
         const normalized = normalizeAsin(candidate);
         if (normalized === null) {
             rejected.push({ type: 'asin', value: candidate, reason: FAILURE_REASON.ASIN_MALFORMED });
@@ -106,11 +151,6 @@ export function validateInput(raw: RawActorInput | null | undefined): ValidatedI
             asins.push(normalized);
         }
     }
-
-    const urls = asStringArray(src.urls, 'urls');
-    // A single API keyword such as "coffee maker" is one search phrase, not
-    // two separate keywords. Arrays remain the unambiguous multi-keyword form.
-    const keywords = asStringArray(src.keywords, 'keywords', /[;\n]+/);
 
     if (src.datasetId !== undefined && src.datasetId !== null && typeof src.datasetId !== 'string') {
         throw new InputError('datasetId must be a string');
@@ -121,19 +161,25 @@ export function validateInput(raw: RawActorInput | null | undefined): ValidatedI
         throw new InputError('no inputs provided: supply at least one of asins, urls, keywords or datasetId');
     }
 
-    if (src.includeOffers === true) {
-        throw new InputError('includeOffers is planned for V1.2 and is not available in this release');
+    if (src.compareWithDatasetId !== undefined
+        && src.compareWithDatasetId !== null
+        && typeof src.compareWithDatasetId !== 'string') {
+        throw new InputError('compareWithDatasetId must be a string');
     }
-    if (src.includeSellerDetails === true) {
-        throw new InputError('includeSellerDetails is planned for V1.2 and is not available in this release');
+    const compareWithDatasetId = src.compareWithDatasetId?.trim() || null;
+    if (mode === 'monitor' && compareWithDatasetId === null) {
+        throw new InputError('monitor mode requires compareWithDatasetId');
     }
-    if (src.compareWithDatasetId != null && String(src.compareWithDatasetId).trim() !== '') {
-        throw new InputError('compareWithDatasetId is planned for V1.4 and is not available in this release');
+    if (src.includeSellerDetails === true && src.includeOffers !== true) {
+        warnings.push('includeSellerDetails is enabled without includeOffers; only the Buy Box seller can be enriched');
+    }
+    if (mode === 'fast' && (src.includeOffers === true || src.includeSellerDetails === true)) {
+        throw new InputError('fast mode cannot include offers or seller details; use detail or intelligence mode');
     }
 
-    const requestedSchemaVersion = src.schemaVersion ?? '1.1';
-    if (requestedSchemaVersion !== '1.1') {
-        warnings.push(`caller expects schemaVersion ${requestedSchemaVersion}; this Actor emits 1.1`);
+    const requestedSchemaVersion = src.schemaVersion ?? '1.4';
+    if (requestedSchemaVersion !== '1.4') {
+        warnings.push(`caller expects schemaVersion ${requestedSchemaVersion}; this Actor emits 1.4`);
     }
 
     const postalCode = src.postalCode?.trim() || null;
@@ -164,7 +210,7 @@ export function validateInput(raw: RawActorInput | null | undefined): ValidatedI
         deduplicate: bool(src.deduplicate, INPUT_DEFAULTS.deduplicate),
         allowResidentialFallback: bool(src.allowResidentialFallback, INPUT_DEFAULTS.allowResidentialFallback),
         proxyConfiguration: src.proxyConfiguration ?? null,
-        compareWithDatasetId: src.compareWithDatasetId?.trim() || null,
+        compareWithDatasetId,
         requestedSchemaVersion,
     };
 

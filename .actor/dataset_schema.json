@@ -10,7 +10,7 @@
                 "type": "string",
                 "title": "Schema version",
                 "description": "Version of the stable output contract.",
-                "example": "1.1"
+                "example": "1.4"
             },
             "status": {
                 "type": "string",
@@ -32,7 +32,7 @@
             "marketplace": {
                 "type": ["string", "null"],
                 "title": "Marketplace",
-                "description": "US, UK, or DE.",
+                "description": "US, UK, DE, FR, IT, ES, or CA.",
                 "example": "US"
             },
             "asin": {
@@ -82,6 +82,21 @@
                 "type": "object",
                 "title": "Variants"
             },
+            "offers": {
+                "type": "object",
+                "title": "Offers",
+                "description": "Bounded seller offers with item, shipping and landed prices."
+            },
+            "sellerProfiles": {
+                "type": "object",
+                "title": "Seller profiles",
+                "description": "Public seller feedback and business fields with source URLs."
+            },
+            "monitoring": {
+                "type": "object",
+                "title": "Monitoring",
+                "description": "Field-level changes from a previous dataset."
+            },
             "location": {
                 "type": "object",
                 "title": "Location",
@@ -130,6 +145,9 @@
                     "ratings",
                     "buyBox",
                     "variants",
+                    "offers",
+                    "sellerProfiles",
+                    "monitoring",
                     "location",
                     "quality",
                     "canonicalUrl"

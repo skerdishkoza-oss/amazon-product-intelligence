@@ -1,0 +1,20 @@
+{
+    "$schema": "https://apify-projects.github.io/actor-json-schemas/output.json?v=0.3",
+    "actorOutputSchemaVersion": 1,
+    "title": "Amazon Product Intelligence outputs",
+    "description": "Product and structured failure rows plus the machine-readable run summary.",
+    "properties": {
+        "results": {
+            "type": "string",
+            "title": "Results",
+            "description": "Schema-versioned product intelligence rows and explicit failure rows.",
+            "template": "{{links.apiDefaultDatasetUrl}}/items"
+        },
+        "runSummary": {
+            "type": "string",
+            "title": "Run summary",
+            "description": "Accounting, monitoring, proxy health, billing and truncation metrics for the run.",
+            "template": "{{links.apiDefaultKeyValueStoreUrl}}/records/RUN_SUMMARY"
+        }
+    }
+}

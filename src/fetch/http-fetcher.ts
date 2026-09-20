@@ -146,7 +146,7 @@ export class HttpFetcher implements Fetcher {
 
     private headersFor(request: FetchRequest): Record<string, string> {
         const cfg = getMarketplace(request.marketplace);
-        return {
+        const headers: Record<string, string> = {
             // C11: mandatory compression. got-scraping decompresses for us.
             'accept-encoding': 'gzip, deflate, br',
             accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
@@ -159,6 +159,8 @@ export class HttpFetcher implements Fetcher {
             'cache-control': 'no-cache',
             pragma: 'no-cache',
         };
+        if (request.label === 'OFFERS') headers['x-requested-with'] = 'XMLHttpRequest';
+        return headers;
     }
 
     async fetch(request: FetchRequest): Promise<FetchResult> {
@@ -256,7 +258,11 @@ export class HttpFetcher implements Fetcher {
                 html,
                 statusCode: response.statusCode,
                 cfg,
-                expected: request.label === 'SEARCH' ? 'SEARCH' : 'PRODUCT',
+                expected: request.label === 'SEARCH'
+                    ? 'SEARCH'
+                    : request.label === 'OFFERS' || request.label === 'SELLER'
+                        ? 'AUXILIARY'
+                        : 'PRODUCT',
             });
 
             // A not-found page is a real answer about the product. Never retry

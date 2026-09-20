@@ -403,3 +403,38 @@ export const NAV_LOCATION_APPLIED = `<html><body><div id="nav-global-location-sl
 
 export const NAV_LOCATION_UNSET = `<html><body><div id="nav-global-location-slot">
 <span id="glow-ingress-line1">Hello</span><span id="glow-ingress-line2">Select your address</span></div></body></html>`;
+
+/** All Offers Display AJAX fragment with two seller offers. */
+export const US_OFFERS = `<div id="aod-container">
+<div id="aod-filter-offer-count-string">2 offers</div>
+<div id="aod-offer">
+  <div id="aod-offer-heading">New</div>
+  <div id="aod-offer-price"><span class="a-price"><span class="a-offscreen">$22.99</span></span></div>
+  <div id="aod-offer-shipping-price">FREE Shipping</div>
+  <div id="aod-offer-soldBy"><a href="/sp?seller=A1EXAMPLE01">Seller One</a></div>
+  <div id="aod-offer-shipsFrom"><span class="a-size-small">Amazon.com</span></div>
+  <div id="aod-offer-seller-rating">98% positive (1,234)</div>
+  <div class="aod-delivery-promise">FREE delivery Tuesday</div><i class="a-icon-prime"></i>
+</div>
+<div id="aod-offer">
+  <div id="aod-offer-heading">Used - Like New</div>
+  <div id="aod-offer-price"><span class="a-price"><span class="a-offscreen">$18.50</span></span></div>
+  <div class="aod-offer-shipping-price"><span class="a-offscreen">$4.49</span></div>
+  <div id="aod-offer-soldBy"><a href="/sp?seller=A2EXAMPLE02">Seller Two</a></div>
+  <div id="aod-offer-shipsFrom"><span class="a-size-small">Seller Two</span></div>
+  <div id="aod-offer-seller-rating">95% positive (987)</div>
+  <div class="aod-delivery-promise">Delivery Wednesday</div>
+</div></div>`;
+
+/** Public seller profile. Legal fields are limited to page-visible values. */
+export const US_SELLER_PROFILE = `<html><body><div id="seller-profile-container">
+<h1 id="sellerName">Seller One</h1>
+<div id="seller-feedback-summary">98% positive (1,234)</div>
+<div id="feedback-30-days">99% positive, 1% neutral, 0% negative (120)</div>
+<div id="feedback-90-days">98% positive, 1% neutral, 1% negative (350)</div>
+<div id="feedback-365-days">98% positive, 1% neutral, 1% negative (1,234)</div>
+<div id="page-section-detail-seller-info"><table>
+  <tr><th>Business Name</th><td>Example Commerce LLC</td></tr>
+  <tr><th>Business Address</th><td>123 Market Street, Seattle, WA</td></tr>
+  <tr><th>VAT ID</th><td>US-EXAMPLE-123</td></tr>
+</table></div></div></body></html>`;

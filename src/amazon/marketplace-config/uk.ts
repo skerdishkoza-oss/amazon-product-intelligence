@@ -26,6 +26,7 @@ export const UK: MarketplaceConfig = {
         shipsFrom: ['Dispatches from', 'Ships from'],
         notFound: ['page not found', 'looking for something?'],
         challenge: ['enter the characters you see below', 'to discuss automated access to amazon data'],
+        noResults: ['no results for'],
         boughtInPastMonth: ['bought in past month'],
         demandMultipliers: [
             { suffix: 'K', factor: 1000 },

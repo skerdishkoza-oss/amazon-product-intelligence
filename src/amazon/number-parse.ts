@@ -27,7 +27,9 @@ function escapeRe(s: string): string {
 /** Strip currency symbols, spaces and direction marks. Keeps digits and separators. */
 export function stripCurrency(input: string, cfg: MarketplaceConfig): string {
     let s = input.replace(/[\u200e\u200f\u202a-\u202e]/g, '');
-    for (const sym of cfg.numberFormat.currencySymbols) {
+    // Remove longer aliases first: CA$ must not become a stray "CA" after
+    // stripping the shorter "$" alias.
+    for (const sym of [...cfg.numberFormat.currencySymbols].sort((a, b) => b.length - a.length)) {
         s = s.split(sym).join('');
     }
     return s.replace(SPACE_CLASS, '').trim();

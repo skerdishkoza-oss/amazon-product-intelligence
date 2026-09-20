@@ -8,7 +8,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { DE, UK, US } from '../../amazon/marketplace-config/index.js';
+import { CA, DE, ES, FR, IT, UK, US } from '../../amazon/marketplace-config/index.js';
 import { parseAvailability } from '../../amazon/parsers/availability.js';
 import { parseRankings } from '../../amazon/parsers/bsr.js';
 import { parseBuyBox } from '../../amazon/parsers/buybox.js';
@@ -99,6 +99,14 @@ test('availability: localized states across all three marketplaces (C6)', () => 
     const de = parseAvailability(F.DE_STANDARD, DE);
     assert.equal(de.state, 'IN_STOCK', '"Auf Lager" is in stock');
     assert.equal(de.status, 'EXTRACTED');
+});
+
+test('availability: FR, IT, ES and CA labels are configuration-driven', () => {
+    const fixture = (text: string): string => `<div id="availability"><span>${text}</span></div>`;
+    assert.equal(parseAvailability(fixture('En stock'), FR).state, 'IN_STOCK');
+    assert.equal(parseAvailability(fixture('Attualmente non disponibile'), IT).state, 'OUT_OF_STOCK');
+    assert.equal(parseAvailability(fixture('Solo queda(n) 2 en stock'), ES).state, 'LIMITED_STOCK');
+    assert.equal(parseAvailability(fixture('In Stock'), CA).state, 'IN_STOCK');
 });
 
 test('availability: ordinary German Auf Lager with punctuation is not limited stock', () => {

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { extractDatasetInputs } from '../../input/dataset-ingest.js';
-import { InputError, validateInput } from '../../input/validate.js';
+import { validateInput } from '../../input/validate.js';
 
 test('a single multi-word keyword remains one search phrase', () => {
     const validated = validateInput({ keywords: 'coffee maker' });
@@ -39,9 +39,42 @@ test('empty datasets produce an explicit rejected input', () => {
     assert.equal(extracted.rejected[0]?.reason, 'DATASET_EMPTY');
 });
 
-test('planned P1 inputs fail clearly instead of running as silent no-ops', () => {
-    assert.throws(() => validateInput({ asins: ['B0CX23V2ZK'], mode: 'monitor' }), InputError);
-    assert.throws(() => validateInput({ asins: ['B0CX23V2ZK'], includeOffers: true }), /not available/);
-    assert.throws(() => validateInput({ asins: ['B0CX23V2ZK'], includeSellerDetails: true }), /not available/);
-    assert.throws(() => validateInput({ asins: ['B0CX23V2ZK'], compareWithDatasetId: 'prior' }), /not available/);
+test('raw JSON items support strings, object rows and per-row marketplaces', () => {
+    const validated = validateInput({
+        marketplace: 'US',
+        items: [
+            'B0CX23V2ZK',
+            { url: 'https://www.amazon.de/dp/B0DE12345K' },
+            { keyword: 'cafetière', marketplace: 'FR' },
+            { asin: 'B0ES12345K', marketplace: 'ES' },
+            { asin: 'bad' },
+            { asin: 'B0GOOD0001', keyword: 'ambiguous row' },
+        ],
+    });
+
+    assert.deepEqual(validated.input.asins, ['B0CX23V2ZK']);
+    assert.ok(validated.input.urls.includes('https://www.amazon.de/dp/B0DE12345K'));
+    assert.ok(validated.input.urls.some((url) => url.startsWith('https://www.amazon.fr/s?')));
+    assert.ok(validated.input.urls.includes('https://www.amazon.es/dp/B0ES12345K'));
+    assert.deepEqual(validated.rejected.map((item) => item.reason), ['ASIN_MALFORMED', 'URL_UNSUPPORTED']);
+});
+
+test('intelligence and monitoring inputs are validated explicitly', () => {
+    assert.throws(() => validateInput({ asins: ['B0CX23V2ZK'], mode: 'monitor' }), /requires compareWithDatasetId/);
+    const intelligence = validateInput({
+        asins: ['B0CX23V2ZK'],
+        mode: 'intelligence',
+        includeOffers: true,
+        includeSellerDetails: true,
+    });
+    assert.equal(intelligence.input.includeOffers, true);
+    assert.equal(intelligence.input.includeSellerDetails, true);
+
+    const monitor = validateInput({ asins: ['B0CX23V2ZK'], mode: 'monitor', compareWithDatasetId: 'prior' });
+    assert.equal(monitor.input.compareWithDatasetId, 'prior');
+    assert.equal(monitor.input.requestedSchemaVersion, '1.4');
+    assert.throws(
+        () => validateInput({ asins: ['B0CX23V2ZK'], mode: 'fast', includeOffers: true }),
+        /fast mode cannot include offers/,
+    );
 });

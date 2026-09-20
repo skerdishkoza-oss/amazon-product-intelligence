@@ -62,6 +62,10 @@ export interface ScriptedOptions {
     productFixture?: string;
     /** Default search fixture. */
     searchFixture?: string;
+    /** Default All Offers Display fragment. */
+    offerFixture?: string;
+    /** Default public seller-profile page. */
+    sellerFixture?: string;
     health?: FetchHealth | (() => FetchHealth);
 }
 
@@ -81,6 +85,29 @@ export class ScriptedFetcher implements Fetcher {
             return ok(this.options.searchFixture ?? F.US_SEARCH_PAGE, {
                 finalUrl: request.url,
                 pageType: 'SEARCH',
+                locationApplied: request.postalCode !== null,
+                resolvedPostalCode: request.postalCode,
+            });
+        }
+
+        if (request.label === 'OFFERS') {
+            const scripted = script[request.url];
+            if (scripted) return scripted;
+            return ok(this.options.offerFixture ?? F.US_OFFERS, {
+                finalUrl: request.url,
+                pageType: 'UNKNOWN',
+                locationApplied: request.postalCode !== null,
+                resolvedPostalCode: request.postalCode,
+            });
+        }
+
+        if (request.label === 'SELLER') {
+            const sellerId = new URL(request.url).searchParams.get('seller') ?? request.url;
+            const scripted = script[sellerId] ?? script[request.url];
+            if (scripted) return scripted;
+            return ok(this.options.sellerFixture ?? F.US_SELLER_PROFILE, {
+                finalUrl: request.url,
+                pageType: 'UNKNOWN',
                 locationApplied: request.postalCode !== null,
                 resolvedPostalCode: request.postalCode,
             });

@@ -2,16 +2,16 @@
 
 Extract Amazon prices, variants, BSR, stock, Buy Box, sellers, discounts, ratings and product data with explicit source and status fields, so you know whether a value is truly absent or the scraper failed.
 
-Implements the specification's **V1 P0 launch scope**. TypeScript, Apify SDK v3, `got-scraping` with Crawlee's session pool. Browser rendering is deliberately absent: everything is extracted from HTML and embedded JSON.
+Implements the specification through **V1.4 (P0 + P1)**. TypeScript, Apify SDK v3, `got-scraping` with Crawlee's session pool. Browser rendering is deliberately absent: everything is extracted from HTML and embedded JSON.
 
 ## Build state
 
-The P0 code paths are implemented, plus variant price enrichment brought forward from P1. Public-release validation is still pending live US/UK/DE smoke fixtures and the specification's 100-record manual audit.
+The P0 and P1 code paths are implemented and covered by offline fixtures. Public-release validation is still pending sanitized live captures across all seven marketplaces, the specification's 100-record manual audit, and confirmation of the pay-per-event configuration in Apify Console.
 
 | Area | State |
 | --- | --- |
-| ASIN, product URL, keyword, category, best-seller and Apify Dataset inputs | Done |
-| US / UK / DE marketplaces, config-driven labels and number formats | Done |
+| ASIN, product URL, keyword, category, best-seller, raw JSON and Apify Dataset inputs | Done |
+| US / UK / DE / FR / IT / ES / CA marketplaces, config-driven labels and number formats | Done |
 | Price, list price, discount, coupon, deal, unit price, Subscribe & Save | Done |
 | Availability and delivery, localized state mapping | Done |
 | BSR with source tracking, demand signal with localized magnitudes | Done |
@@ -21,20 +21,67 @@ The P0 code paths are implemented, plus variant price enrichment brought forward
 | Variant `price` mode (per-child price and stock) and `full` mode | Done |
 | Product content, specifications, breadcrumb, media at full resolution | Done |
 | Search/listing extraction with organic vs sponsored positions | Done |
+| Seller/storefront discovery through listing surfaces | Done |
+| Bounded All Offers extraction: seller, condition, item/shipping/landed price, Prime, fulfillment | Done |
+| Public seller profiles: business fields, rating/feedback windows and legal identifiers when displayed | Done |
+| Prior-dataset monitoring with typed changes and `product-check` billing | Done |
 | HTTP fetcher: session pool, compression, retries, tier escalation budget | Done |
 | Delivery-location priming, once per session, verified from the page | Done |
 | Circuit breaker, dynamic concurrency, cooperative shutdown | Done |
 | Accounting invariant, structured failures, `RUN_ABORTED` flush | Done |
 | Billing abstraction, SUCCESS-only charging, charge-cap wind-down | Done |
 | Golden JSON-Schema gate over every emitted record | Done |
-| Storefront discovery, offers, seller intelligence, monitoring/diff, FR/IT/ES/CA | P1; not exposed as working features |
 | Discovery filters, sales estimates | P2 per roadmap §13 |
 
 ```
 npm ci
-npm test      # 133 tests: 132 pass, 1 live-fixture test skips until captures exist
+npm test      # full offline suite; live-fixture test skips until captures exist
 npm start     # reads storage/key_value_stores/default/INPUT.json
 ```
+
+## Input examples
+
+Full product detail with free variant discovery:
+
+```json
+{
+  "marketplace": "US",
+  "asins": ["B0CX23V2ZK"],
+  "mode": "detail",
+  "variantMode": "discover",
+  "postalCode": "10001",
+  "requireLocation": true
+}
+```
+
+Offer and seller intelligence is deliberately opt-in:
+
+```json
+{
+  "marketplace": "DE",
+  "keywords": ["wasserkocher edelstahl"],
+  "mode": "intelligence",
+  "includeOffers": true,
+  "maxOffersPerProduct": 10,
+  "includeSellerDetails": true,
+  "maxProducts": 100
+}
+```
+
+Compare current state with a previous Actor dataset:
+
+```json
+{
+  "marketplace": "FR",
+  "asins": ["B0CX23V2ZK"],
+  "mode": "monitor",
+  "compareWithDatasetId": "PREVIOUS_DATASET_ID"
+}
+```
+
+## Proxies
+
+On Apify, leave `proxyConfiguration.useApifyProxy` enabled and the platform supplies the proxy connection; do not commit proxy credentials. The Actor begins with the configured primary tier and can move to a separate residential configuration after a verified block. Users may instead provide `proxyConfiguration.proxyUrls` to use their own proxy provider.
 
 ## What makes the output different
 
@@ -66,13 +113,14 @@ src/
   pipeline/
     run.ts              Run loop: driver, discovery, accounting contract
     queue.ts            Work items; register-and-enqueue is one operation
+  history/compare.ts    Prior-dataset indexing and typed field changes
   types/                status.ts (two enums), money.ts (minor units), output.ts
   input/                validation, normalization and bounded Dataset ingestion
   amazon/
-    marketplace-config/ us/uk/de: hosts, number formats, label dictionaries
+    marketplace-config/ seven locales: hosts, number formats, label dictionaries
     number-parse.ts     locale-aware money, counts, ratings, demand
     parsers/            price, availability, bsr, ratings, buybox, identity,
-                        content, media, variants, search, page-type, product
+                        content, media, variants, offers, seller, search, product
   fetch/
     http-fetcher.ts     sessions, tiers, budget, breaker, retries
     location-primer.ts  postal-code priming and verification
@@ -81,16 +129,16 @@ src/
   output/               accounting.ts, record-builder.ts, dataset-writer.ts, summary.ts
   tests/
     fixtures/pages.ts   Offline fixtures across the §12.1 matrix
-    unit/               133 tests
+    unit/               parser, schema, billing, accounting and pipeline tests
 ```
 
 ## Fixtures
 
-`src/tests/fixtures/pages.ts` reproduces the container IDs, class names and embedded-JSON shapes the parsers target, across US/UK/DE and the product states in §12.1: in stock, out of stock, no Buy Box, coupon/deal, limited stock, variation parent (JSON and DOM-only), legacy layout, JSON-LD-only pricing, no BSR, unrecognized availability wording, challenge page, dog page, stub page, and search pages.
+`src/tests/fixtures/pages.ts` reproduces the container IDs, class names and embedded-JSON shapes the parsers target, including localized price/availability vectors for all seven marketplaces and the product states in §12.1: in stock, out of stock, no Buy Box, coupon/deal, limited stock, variation parent (JSON and DOM-only), legacy layout, JSON-LD-only pricing, no BSR, unrecognized availability wording, offers, seller profiles, challenge page, dog page, stub page, and search pages.
 
 These make CI runnable with no proxy spend, but they are not a substitute for real pages. Run `node scripts/capture-fixture.mjs B0CX23V2ZK US --proxy <url>` to capture a live page with session tokens, CSRF tokens and delivery addresses stripped. Captures land in `fixtures/real/` and `real-fixtures.test.ts` runs the full parser suite over each one, asserting no strategy throws and nothing session-bearing survived sanitization. That test skips cleanly when there are no captures.
 
-Planned P1 inputs are deliberately not shown in the public Input UI. API callers that set `includeOffers`, `includeSellerDetails`, `compareWithDatasetId`, `mode: intelligence`, or `mode: monitor` receive a clear input error instead of a successful-looking no-op run.
+`includeOffers` and `includeSellerDetails` are opt-in because they add requests and billing events. `mode: monitor` requires `compareWithDatasetId`; each successful check is billed even when no field changed, because Amazon acquisition work still occurred. Every optional block reports whether it was requested, extracted, absent, or missed.
 
 ## Before publishing
 
@@ -98,4 +146,6 @@ Spec §8.4 is a hard gate. Most importantly: the synthetic `apify-default-datase
 
 Base pricing is open decision D1 in the spec. All charging is behind `billing/events.ts` with prices read from config, so the number can be set at publication without touching a parser.
 
-Before Store publication, capture and commit sanitized live fixtures for US, UK and DE, run the fixed benchmark set, complete the 100-record manual audit, and confirm the pay-per-event names and prices in Apify Console.
+Before Store publication, capture and commit sanitized live fixtures for US, UK, DE, FR, IT, ES and CA, run the fixed benchmark set, complete the 100-record manual audit, and confirm the pay-per-event names and prices in Apify Console. Do not market this build as fully validated until that gate passes.
+
+For GitHub deployment, connect the repository as the Actor source in Apify Console and point it at `main`. Apify reads `.actor/actor.json`, builds the root `Dockerfile`, and exposes the declared input, output and dataset schemas. The same project can be deployed from a terminal with the official CLI after `apify auth login`, `apify validate-schema`, and `apify push`.

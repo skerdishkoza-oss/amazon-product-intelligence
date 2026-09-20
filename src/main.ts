@@ -12,10 +12,12 @@ import { BillingEvents, NoopChargingBackend } from './billing/events.js';
 import { FETCHER_DEFAULTS, HttpFetcher } from './fetch/http-fetcher.js';
 import { extractDatasetInputs } from './input/dataset-ingest.js';
 import { InputError, validateInput } from './input/validate.js';
+import { classifyUrl } from './input/normalizer.js';
 import { RunAccounting } from './output/accounting.js';
 import { DatasetWriter, type DatasetSink } from './output/dataset-writer.js';
 import { buildRunSummary } from './output/summary.js';
 import { runPipeline } from './pipeline/run.js';
+import { historyKey } from './history/compare.js';
 import type { RawActorInput } from './types/input.js';
 import type { DatasetRecord } from './types/output.js';
 
@@ -49,6 +51,9 @@ try {
             asins: [...validated.input.asins, ...extracted.asins],
             urls: [...validated.input.urls, ...extracted.urls],
             keywords: validated.input.keywords,
+            // Raw item rows were already expanded by the first validation.
+            // Clearing them prevents duplicate work when dataset inputs are merged.
+            items: [],
         });
         validated.rejected.unshift(...originalRejected, ...extracted.rejected);
         validated.warnings = [...new Set([...originalWarnings, ...validated.warnings])];
@@ -73,6 +78,23 @@ try {
 for (const warning of validated.warnings) log.warning(warning);
 
 const { input } = validated;
+const runMarketplaces = new Set([input.marketplace]);
+for (const url of input.urls) {
+    const classified = classifyUrl(url);
+    if (classified.ok) runMarketplaces.add(classified.value.marketplace);
+}
+const previousRecords = new Map<string, Record<string, unknown>>();
+if (input.compareWithDatasetId !== null) {
+    const previousDataset = await Actor.openDataset<Record<string, unknown>>({ id: input.compareWithDatasetId });
+    await previousDataset.forEach((record) => {
+        if (record.status !== 'SUCCESS' || typeof record.marketplace !== 'string' || typeof record.asin !== 'string') return;
+        previousRecords.set(historyKey(record.marketplace, record.asin), record);
+    });
+    log.info('loaded previous product state', {
+        datasetId: input.compareWithDatasetId,
+        products: previousRecords.size,
+    });
+}
 log.info('run configuration', {
     mode: input.mode,
     marketplace: input.marketplace,
@@ -84,6 +106,9 @@ log.info('run configuration', {
     requireLocation: input.requireLocation,
     maxProducts: input.maxProducts,
     allowResidentialFallback: input.allowResidentialFallback,
+    includeOffers: input.includeOffers,
+    includeSellerDetails: input.includeSellerDetails,
+    compareWithDatasetId: input.compareWithDatasetId,
 });
 
 // Pay-per-event runs set this; local and unmonetized runs do not.
@@ -166,6 +191,7 @@ try {
         writer,
         billing,
         accounting,
+        previousRecords,
         log: (msg, data) => log.info(msg, data),
     });
 } finally {
@@ -175,12 +201,15 @@ try {
 const summary = buildRunSummary({
     accounting,
     runStartedAt,
-    marketplaces: [input.marketplace],
+    marketplaces: [...runMarketplaces],
     mode: input.mode,
     filteredOut: 0,
     discoveredProducts: outcome.discovered,
     searchPagesFetched: outcome.searchPagesFetched,
     discoveryTruncated: outcome.discoveryTruncated,
+    monitoringChecked: outcome.monitoringChecked,
+    monitoringCompared: outcome.monitoringCompared,
+    monitoringChanged: outcome.monitoringChanged,
     peakConcurrency: outcome.peakConcurrency,
     fetchStats: fetcher.stats(),
     billing: billing.stats(),

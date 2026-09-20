@@ -16,6 +16,8 @@ import type {
     LocationBlock,
     MarketplaceCode,
     MediaBlock,
+    MonitoringBlock,
+    OffersBlock,
     PricingBlock,
     ProductContentBlock,
     ProductRecord,
@@ -23,13 +25,14 @@ import type {
     QualityBlock,
     RankingsBlock,
     RatingsBlock,
+    SellerProfilesBlock,
     VariantMode,
     VariantsBlock,
 } from '../types/output.js';
 import { SCHEMA_VERSION } from '../types/output.js';
 import { FIELD_STATUS, RECORD_STATUS, type FailureReason, type FieldStatus, type RecordStatus } from '../types/status.js';
 
-export const PARSER_VERSION = '2026-09-04.1';
+export const PARSER_VERSION = '2026-09-20.1';
 
 /** C1: ISO 8601 UTC with a Z suffix, taken at response receipt. */
 export function nowIso(): string {
@@ -131,6 +134,36 @@ export function emptyMedia(status: FieldStatus = FIELD_STATUS.PARSER_MISS): Medi
     return { mainImage: null, images: [], videos: [], status };
 }
 
+export function emptyOffers(requested = false, status?: FieldStatus): OffersBlock {
+    return {
+        requested,
+        totalCount: null,
+        items: [],
+        truncated: false,
+        status: status ?? (requested ? FIELD_STATUS.PARSER_MISS : FIELD_STATUS.NOT_APPLICABLE),
+    };
+}
+
+export function emptySellerProfiles(requested = false, status?: FieldStatus): SellerProfilesBlock {
+    return {
+        requested,
+        items: [],
+        status: status ?? (requested ? FIELD_STATUS.PARSER_MISS : FIELD_STATUS.NOT_APPLICABLE),
+    };
+}
+
+export function emptyMonitoring(requested = false, previousDatasetId: string | null = null): MonitoringBlock {
+    return {
+        requested,
+        compared: false,
+        previousDatasetId,
+        previousScrapedAt: null,
+        changed: false,
+        changes: [],
+        status: requested ? FIELD_STATUS.NOT_PRESENT : FIELD_STATUS.NOT_APPLICABLE,
+    };
+}
+
 export function locationBlock(args: {
     requestedCountry: string | null;
     requestedPostalCode: string | null;
@@ -176,6 +209,9 @@ export interface ProductRecordDraft {
     variants?: VariantsBlock;
     product?: ProductContentBlock;
     media?: MediaBlock;
+    offers?: OffersBlock;
+    sellerProfiles?: SellerProfilesBlock;
+    monitoring?: MonitoringBlock;
     location: LocationBlock;
     sources?: ProductRecord['sources'];
     quality?: QualityBlock;
@@ -203,6 +239,9 @@ export function buildProductRecord(draft: ProductRecordDraft): ProductRecord {
         variants: draft.variants ?? emptyVariants('none'),
         product: draft.product ?? emptyProductContent(),
         media: draft.media ?? emptyMedia(),
+        offers: draft.offers ?? emptyOffers(),
+        sellerProfiles: draft.sellerProfiles ?? emptySellerProfiles(),
+        monitoring: draft.monitoring ?? emptyMonitoring(),
         location: draft.location,
         sources: draft.sources ?? {},
         quality: draft.quality ?? qualityBlock(),

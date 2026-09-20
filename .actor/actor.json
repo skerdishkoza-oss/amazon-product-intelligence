@@ -3,14 +3,16 @@
     "name": "amazon-product-intelligence",
     "title": "Amazon Product Scraper - Prices, Variants, Sellers & BSR",
     "description": "Extract Amazon prices, variants, BSR, stock, Buy Box, sellers, discounts, ratings and product data with explicit source and status fields, so you know whether a value is truly absent or the scraper failed.",
-    "version": "1.1",
+    "version": "1.4",
     "buildTag": "latest",
     "meta": {
         "templateId": "ts-crawlee-cheerio"
     },
     "input": "./input_schema.json",
+    "output": "./output_schema.json",
     "dockerfile": "../Dockerfile",
     "readme": "../README.md",
+    "changelog": "./CHANGELOG.md",
     "storages": {
         "dataset": "./dataset_schema.json"
     }

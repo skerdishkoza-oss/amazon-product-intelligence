@@ -35,20 +35,27 @@ test('classifyUrl extracts ASINs from every common product URL shape', () => {
     }
 });
 
-test('classifyUrl detects the marketplace from the host', () => {
-    const uk = classifyUrl('https://www.amazon.co.uk/dp/B0CX23V2ZK');
-    assert.ok(uk.ok);
-    assert.equal(uk.value.marketplace, 'UK');
-
-    const de = classifyUrl('https://www.amazon.de/dp/B0CX23V2ZK');
-    assert.ok(de.ok);
-    assert.equal(de.value.marketplace, 'DE');
+test('classifyUrl detects every supported marketplace from the host', () => {
+    const cases = [
+        ['https://www.amazon.com/dp/B0CX23V2ZK', 'US'],
+        ['https://www.amazon.co.uk/dp/B0CX23V2ZK', 'UK'],
+        ['https://www.amazon.de/dp/B0CX23V2ZK', 'DE'],
+        ['https://www.amazon.fr/dp/B0CX23V2ZK', 'FR'],
+        ['https://www.amazon.it/dp/B0CX23V2ZK', 'IT'],
+        ['https://www.amazon.es/dp/B0CX23V2ZK', 'ES'],
+        ['https://www.amazon.ca/dp/B0CX23V2ZK', 'CA'],
+    ] as const;
+    for (const [url, marketplace] of cases) {
+        const result = classifyUrl(url);
+        assert.ok(result.ok, `failed to classify ${url}`);
+        assert.equal(result.value.marketplace, marketplace);
+    }
 });
 
 test('classifyUrl reports unsupported marketplaces rather than guessing', () => {
-    const fr = classifyUrl('https://www.amazon.fr/dp/B0CX23V2ZK');
-    assert.equal(fr.ok, false);
-    if (!fr.ok) assert.equal(fr.reason, 'MARKETPLACE_UNSUPPORTED');
+    const au = classifyUrl('https://www.amazon.com.au/dp/B0CX23V2ZK');
+    assert.equal(au.ok, false);
+    if (!au.ok) assert.equal(au.reason, 'MARKETPLACE_UNSUPPORTED');
 
     const junk = classifyUrl('not a url');
     assert.equal(junk.ok, false);
@@ -91,6 +98,10 @@ test('dedupe key includes the resolved location (C3)', () => {
 
 test('URL builders use the right host per marketplace', () => {
     assert.equal(canonicalProductUrl('DE', 'B0CX23V2ZK'), 'https://www.amazon.de/dp/B0CX23V2ZK');
+    assert.equal(canonicalProductUrl('FR', 'B0CX23V2ZK'), 'https://www.amazon.fr/dp/B0CX23V2ZK');
+    assert.equal(canonicalProductUrl('IT', 'B0CX23V2ZK'), 'https://www.amazon.it/dp/B0CX23V2ZK');
+    assert.equal(canonicalProductUrl('ES', 'B0CX23V2ZK'), 'https://www.amazon.es/dp/B0CX23V2ZK');
+    assert.equal(canonicalProductUrl('CA', 'B0CX23V2ZK'), 'https://www.amazon.ca/dp/B0CX23V2ZK');
     assert.ok(searchUrl('UK', 'kettle', 2).startsWith('https://www.amazon.co.uk/s?'));
     assert.ok(searchUrl('UK', 'kettle', 2).includes('page=2'));
 });

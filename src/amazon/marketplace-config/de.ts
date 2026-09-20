@@ -36,6 +36,7 @@ export const DE: MarketplaceConfig = {
             'wir möchten nur sicherstellen, dass sie kein roboter sind',
             'automatisierten zugriff auf amazon-daten',
         ],
+        noResults: ['keine ergebnisse', 'keine resultate'],
         boughtInPastMonth: ['mal im letzten monat gekauft', 'im letzten monat gekauft'],
         demandMultipliers: [
             { suffix: 'Tsd', factor: 1000 },

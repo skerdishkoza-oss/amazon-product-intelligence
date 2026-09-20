@@ -6,7 +6,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { DE, UK, US } from '../../amazon/marketplace-config/index.js';
+import { CA, DE, ES, FR, IT, UK, US } from '../../amazon/marketplace-config/index.js';
 import {
     extractFirstMoney,
     parseBoughtInPastMonth,
@@ -34,6 +34,21 @@ test('the seven mandatory parse vectors (C5)', () => {
         assert.equal(parsed.minor, expectedMinor, `wrong minor units for ${JSON.stringify(raw)}`);
         assert.equal(parsed.currency, currency);
         assert.equal(parsed.raw, raw.trim(), 'raw display string must be preserved verbatim');
+    }
+});
+
+test('FR, IT, ES and CA money formats preserve minor units and currency', () => {
+    const vectors: Array<[string, typeof US, number, string]> = [
+        [`1${NBSP}234,56 €`, FR, 123456, 'EUR'],
+        ['1.234,56 €', IT, 123456, 'EUR'],
+        ['1.234,56 €', ES, 123456, 'EUR'],
+        ['CA$1,234.56', CA, 123456, 'CAD'],
+    ];
+    for (const [raw, cfg, expectedMinor, currency] of vectors) {
+        const parsed = parseMoney(raw, cfg);
+        assert.ok(parsed !== null, `failed to parse ${raw} for ${cfg.code}`);
+        assert.equal(parsed.minor, expectedMinor);
+        assert.equal(parsed.currency, currency);
     }
 });
 

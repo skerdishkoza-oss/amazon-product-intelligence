@@ -1,7 +1,7 @@
 {
     "$schema": "http://json-schema.org/draft-07/schema#",
-    "$id": "https://apify.com/amazon-product-intelligence/schemas/record-1.1.json",
-    "title": "Amazon Product Intelligence dataset record v1.1",
+    "$id": "https://apify.com/amazon-product-intelligence/schemas/record-1.4.json",
+    "title": "Amazon Product Intelligence dataset record v1.4",
     "description": "Golden schema. Every record the Actor writes to a dataset validates against this or CI fails (spec 12.2).",
     "oneOf": [{ "$ref": "#/definitions/productRecord" }, { "$ref": "#/definitions/failureRecord" }],
     "definitions": {
@@ -17,7 +17,7 @@
                 "PARSER_MISS"
             ]
         },
-        "marketplace": { "type": "string", "enum": ["US", "UK", "DE"] },
+        "marketplace": { "type": "string", "enum": ["US", "UK", "DE", "FR", "IT", "ES", "CA"] },
         "proxyTier": {
             "type": "string",
             "enum": ["DATACENTER", "RESIDENTIAL", "EXTERNAL", "BROWSER", "NONE"]
@@ -49,6 +49,82 @@
                 "raw": { "type": "string" }
             }
         },
+        "offerItem": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "sellerId", "sellerName", "condition", "itemPrice", "shippingPrice", "landedPrice",
+                "primeEligible", "fulfillment", "deliveryText", "sellerRating", "sellerFeedbackCount",
+                "sourceUrl", "status"
+            ],
+            "properties": {
+                "sellerId": { "type": ["string", "null"] },
+                "sellerName": { "type": ["string", "null"] },
+                "condition": { "type": "string", "enum": ["NEW", "USED", "REFURBISHED", "COLLECTIBLE", "UNKNOWN"] },
+                "itemPrice": { "$ref": "#/definitions/money" },
+                "shippingPrice": { "$ref": "#/definitions/money" },
+                "landedPrice": { "$ref": "#/definitions/money" },
+                "primeEligible": { "type": ["boolean", "null"] },
+                "fulfillment": { "type": "string", "enum": ["AMZ", "FBA", "FBM", "UNKNOWN"] },
+                "deliveryText": { "type": ["string", "null"] },
+                "sellerRating": { "type": ["number", "null"], "minimum": 0, "maximum": 100 },
+                "sellerFeedbackCount": { "type": ["integer", "null"], "minimum": 0 },
+                "sourceUrl": { "type": "string", "pattern": "^https://" },
+                "status": { "$ref": "#/definitions/fieldStatus" }
+            }
+        },
+        "feedbackWindow": {
+            "type": ["object", "null"],
+            "additionalProperties": false,
+            "required": ["positivePercent", "neutralPercent", "negativePercent", "count"],
+            "properties": {
+                "positivePercent": { "type": ["number", "null"], "minimum": 0, "maximum": 100 },
+                "neutralPercent": { "type": ["number", "null"], "minimum": 0, "maximum": 100 },
+                "negativePercent": { "type": ["number", "null"], "minimum": 0, "maximum": 100 },
+                "count": { "type": ["integer", "null"], "minimum": 0 }
+            }
+        },
+        "sellerProfile": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "sellerId", "sellerName", "businessName", "businessAddress", "rating", "feedbackCount",
+                "feedback30Days", "feedback90Days", "feedback365Days", "legalIdentifiers", "sourceUrl", "status"
+            ],
+            "properties": {
+                "sellerId": { "type": "string", "minLength": 1 },
+                "sellerName": { "type": ["string", "null"] },
+                "businessName": { "type": ["string", "null"] },
+                "businessAddress": { "type": ["string", "null"] },
+                "rating": { "type": ["number", "null"], "minimum": 0, "maximum": 100 },
+                "feedbackCount": { "type": ["integer", "null"], "minimum": 0 },
+                "feedback30Days": { "$ref": "#/definitions/feedbackWindow" },
+                "feedback90Days": { "$ref": "#/definitions/feedbackWindow" },
+                "feedback365Days": { "$ref": "#/definitions/feedbackWindow" },
+                "legalIdentifiers": { "type": "object", "additionalProperties": { "type": "string" } },
+                "sourceUrl": { "type": "string", "pattern": "^https://" },
+                "status": { "$ref": "#/definitions/fieldStatus" }
+            }
+        },
+        "productChange": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["type", "field", "before", "after", "percentChange"],
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "enum": [
+                        "PRICE_CHANGED", "DISCOUNT_CHANGED", "COUPON_ADDED", "COUPON_REMOVED",
+                        "OUT_OF_STOCK", "BACK_IN_STOCK", "BUY_BOX_CHANGED", "SELLER_COUNT_CHANGED",
+                        "BSR_CHANGED", "RATING_CHANGED", "REVIEW_COUNT_CHANGED", "PRODUCT_REMOVED_OR_UNAVAILABLE"
+                    ]
+                },
+                "field": { "type": "string" },
+                "before": {},
+                "after": {},
+                "percentChange": { "type": ["number", "null"] }
+            }
+        },
         "productRecord": {
             "type": "object",
             "additionalProperties": false,
@@ -71,6 +147,9 @@
                 "variants",
                 "product",
                 "media",
+                "offers",
+                "sellerProfiles",
+                "monitoring",
                 "location",
                 "sources",
                 "quality",
@@ -78,7 +157,7 @@
                 "deprecations"
             ],
             "properties": {
-                "schemaVersion": { "const": "1.1" },
+                "schemaVersion": { "const": "1.4" },
                 "status": { "const": "SUCCESS" },
                 "scrapedAt": { "$ref": "#/definitions/isoInstant" },
                 "input": { "$ref": "#/definitions/inputRef" },
@@ -205,6 +284,42 @@
                 },
                 "product": { "type": "object", "required": ["bullets", "specifications", "status"] },
                 "media": { "type": "object", "required": ["mainImage", "images", "status"] },
+                "offers": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["requested", "totalCount", "items", "truncated", "status"],
+                    "properties": {
+                        "requested": { "type": "boolean" },
+                        "totalCount": { "type": ["integer", "null"], "minimum": 0 },
+                        "items": { "type": "array", "items": { "$ref": "#/definitions/offerItem" } },
+                        "truncated": { "type": "boolean" },
+                        "status": { "$ref": "#/definitions/fieldStatus" }
+                    }
+                },
+                "sellerProfiles": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["requested", "items", "status"],
+                    "properties": {
+                        "requested": { "type": "boolean" },
+                        "items": { "type": "array", "items": { "$ref": "#/definitions/sellerProfile" } },
+                        "status": { "$ref": "#/definitions/fieldStatus" }
+                    }
+                },
+                "monitoring": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["requested", "compared", "previousDatasetId", "previousScrapedAt", "changed", "changes", "status"],
+                    "properties": {
+                        "requested": { "type": "boolean" },
+                        "compared": { "type": "boolean" },
+                        "previousDatasetId": { "type": ["string", "null"] },
+                        "previousScrapedAt": { "type": ["string", "null"] },
+                        "changed": { "type": "boolean" },
+                        "changes": { "type": "array", "items": { "$ref": "#/definitions/productChange" } },
+                        "status": { "$ref": "#/definitions/fieldStatus" }
+                    }
+                },
                 "location": {
                     "type": "object",
                     "additionalProperties": false,
@@ -285,7 +400,7 @@
                 "chargedProductEvent"
             ],
             "properties": {
-                "schemaVersion": { "const": "1.1" },
+                "schemaVersion": { "const": "1.4" },
                 "status": {
                     "type": "string",
                     "enum": [
