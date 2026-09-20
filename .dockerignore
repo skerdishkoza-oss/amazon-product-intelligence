@@ -1,0 +1,8 @@
+node_modules
+dist
+storage
+.docx-review
+.git
+.idea
+.DS_Store
+npm-debug.log*

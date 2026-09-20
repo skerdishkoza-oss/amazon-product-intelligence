@@ -1,0 +1,159 @@
+{
+    "actorSpecification": 1,
+    "title": "Amazon product intelligence results",
+    "description": "Successful product rows and structured failure rows. The status field identifies the row type.",
+    "fields": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+            "schemaVersion": {
+                "type": "string",
+                "title": "Schema version",
+                "description": "Version of the stable output contract.",
+                "example": "1.1"
+            },
+            "status": {
+                "type": "string",
+                "title": "Result status",
+                "description": "SUCCESS for a product row; otherwise the structured failure category.",
+                "example": "SUCCESS"
+            },
+            "scrapedAt": {
+                "type": "string",
+                "title": "Scraped at",
+                "description": "UTC time at which the Amazon response was received.",
+                "example": "2026-09-20T10:00:00Z"
+            },
+            "input": {
+                "type": "object",
+                "title": "Input",
+                "description": "The input value and input type that produced this row."
+            },
+            "marketplace": {
+                "type": ["string", "null"],
+                "title": "Marketplace",
+                "description": "US, UK, or DE.",
+                "example": "US"
+            },
+            "asin": {
+                "type": ["string", "null"],
+                "title": "ASIN",
+                "description": "Normalized ten-character Amazon product identifier.",
+                "example": "B0CX23V2ZK"
+            },
+            "title": {
+                "type": ["string", "null"],
+                "title": "Product title"
+            },
+            "brand": {
+                "type": ["string", "null"],
+                "title": "Brand"
+            },
+            "canonicalUrl": {
+                "type": "string",
+                "title": "Canonical URL",
+                "description": "Canonical marketplace product URL."
+            },
+            "pricing": {
+                "type": "object",
+                "title": "Pricing",
+                "description": "Normalized money values, raw text, source, and extraction status."
+            },
+            "availability": {
+                "type": "object",
+                "title": "Availability",
+                "description": "Stock, delivery, Prime, shipping, and seller availability signals."
+            },
+            "rankings": {
+                "type": "object",
+                "title": "Rankings",
+                "description": "Best Sellers Rank entries and bought-in-past-month signal."
+            },
+            "ratings": {
+                "type": "object",
+                "title": "Ratings",
+                "description": "Rating, review count, optional distribution, and extraction status."
+            },
+            "buyBox": {
+                "type": "object",
+                "title": "Buy Box"
+            },
+            "variants": {
+                "type": "object",
+                "title": "Variants"
+            },
+            "location": {
+                "type": "object",
+                "title": "Location",
+                "description": "Requested and resolved delivery-location context."
+            },
+            "quality": {
+                "type": "object",
+                "title": "Quality",
+                "description": "Completeness, attempts, proxy tier, parser version, and warnings."
+            },
+            "discoveredFrom": {
+                "type": "array",
+                "title": "Discovered from",
+                "description": "All direct or discovery sources merged into this product row."
+            },
+            "attempts": {
+                "type": "integer",
+                "title": "Attempts",
+                "description": "Fetch attempts for a failure row."
+            },
+            "reason": {
+                "type": "string",
+                "title": "Failure reason",
+                "description": "Machine-readable reason on non-success rows."
+            },
+            "lastProxyTier": {
+                "type": "string",
+                "title": "Last proxy tier"
+            }
+        }
+    },
+    "views": {
+        "results": {
+            "title": "Results",
+            "transformation": {
+                "fields": [
+                    "status",
+                    "scrapedAt",
+                    "marketplace",
+                    "asin",
+                    "title",
+                    "brand",
+                    "pricing",
+                    "availability",
+                    "rankings",
+                    "ratings",
+                    "buyBox",
+                    "variants",
+                    "location",
+                    "quality",
+                    "canonicalUrl"
+                ]
+            },
+            "display": {
+                "component": "table",
+                "properties": {
+                    "scrapedAt": { "label": "Scraped at", "format": "date" },
+                    "canonicalUrl": { "label": "Product URL", "format": "link" }
+                }
+            }
+        },
+        "diagnostics": {
+            "title": "Status and failure diagnostics",
+            "transformation": {
+                "fields": ["status", "scrapedAt", "marketplace", "input", "asin", "attempts", "reason", "lastProxyTier"]
+            },
+            "display": {
+                "component": "table",
+                "properties": {
+                    "scrapedAt": { "label": "Scraped at", "format": "date" }
+                }
+            }
+        }
+    }
+}

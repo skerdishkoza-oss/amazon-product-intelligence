@@ -1,0 +1,33 @@
+{
+  "name": "amazon-product-intelligence",
+  "version": "1.1.0",
+  "description": "Amazon Product Intelligence Actor - prices, variants, sellers, BSR with explicit data-quality semantics",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc && node scripts/copy-assets.mjs",
+    "start": "npm run build && node dist/main.js",
+    "start:prod": "node dist/main.js",
+    "test": "npm run build && node --test \"dist/tests/unit/*.test.js\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "apify": "3.7.2",
+    "ajv": "8.20.0",
+    "crawlee": "3.18.1",
+    "cheerio": "1.0.0-rc.12",
+    "got-scraping": "4.2.1"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.1",
+    "typescript": "5.9.3"
+  },
+  "overrides": {
+    "linkedom": "0.18.12",
+    "adm-zip": "0.6.1"
+  },
+  "license": "UNLICENSED",
+  "private": true
+}

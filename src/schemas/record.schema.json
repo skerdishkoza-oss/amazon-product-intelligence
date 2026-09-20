@@ -1,0 +1,318 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "$id": "https://apify.com/amazon-product-intelligence/schemas/record-1.1.json",
+    "title": "Amazon Product Intelligence dataset record v1.1",
+    "description": "Golden schema. Every record the Actor writes to a dataset validates against this or CI fails (spec 12.2).",
+    "oneOf": [{ "$ref": "#/definitions/productRecord" }, { "$ref": "#/definitions/failureRecord" }],
+    "definitions": {
+        "fieldStatus": {
+            "type": "string",
+            "enum": [
+                "EXTRACTED",
+                "NOT_PRESENT",
+                "NOT_APPLICABLE",
+                "OUT_OF_STOCK",
+                "GEO_RESTRICTED",
+                "REQUIRES_LOCATION",
+                "PARSER_MISS"
+            ]
+        },
+        "marketplace": { "type": "string", "enum": ["US", "UK", "DE"] },
+        "proxyTier": {
+            "type": "string",
+            "enum": ["DATACENTER", "RESIDENTIAL", "EXTERNAL", "BROWSER", "NONE"]
+        },
+        "isoInstant": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+            "description": "C1: ISO 8601 UTC with a Z suffix."
+        },
+        "inputRef": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["type", "value"],
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "enum": ["asin", "url", "keyword", "dataset", "category", "bestsellers", "seller", "variant"]
+                },
+                "value": { "type": "string" }
+            }
+        },
+        "money": {
+            "type": ["object", "null"],
+            "additionalProperties": false,
+            "required": ["amount", "currency", "raw"],
+            "properties": {
+                "amount": { "type": "number" },
+                "currency": { "type": "string", "minLength": 3, "maxLength": 3 },
+                "raw": { "type": "string" }
+            }
+        },
+        "productRecord": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "schemaVersion",
+                "status",
+                "scrapedAt",
+                "input",
+                "marketplace",
+                "asin",
+                "parentAsin",
+                "canonicalUrl",
+                "title",
+                "brand",
+                "pricing",
+                "availability",
+                "rankings",
+                "ratings",
+                "buyBox",
+                "variants",
+                "product",
+                "media",
+                "location",
+                "sources",
+                "quality",
+                "discoveredFrom",
+                "deprecations"
+            ],
+            "properties": {
+                "schemaVersion": { "const": "1.1" },
+                "status": { "const": "SUCCESS" },
+                "scrapedAt": { "$ref": "#/definitions/isoInstant" },
+                "input": { "$ref": "#/definitions/inputRef" },
+                "marketplace": { "$ref": "#/definitions/marketplace" },
+                "asin": { "type": "string", "pattern": "^[A-Z0-9]{10}$" },
+                "parentAsin": { "type": ["string", "null"], "pattern": "^[A-Z0-9]{10}$" },
+                "canonicalUrl": { "type": "string", "pattern": "^https://" },
+                "title": { "type": ["string", "null"] },
+                "brand": { "type": ["string", "null"] },
+                "pricing": {
+                    "type": "object",
+                    "required": ["currentPrice", "listPrice", "priceSource", "status"],
+                    "properties": {
+                        "currentPrice": { "$ref": "#/definitions/money" },
+                        "listPrice": { "$ref": "#/definitions/money" },
+                        "discountAmount": { "$ref": "#/definitions/money" },
+                        "discountPercent": { "type": ["number", "null"] },
+                        "dealPrice": { "$ref": "#/definitions/money" },
+                        "dealType": { "type": ["string", "null"] },
+                        "coupon": { "type": ["object", "null"] },
+                        "subscribeAndSave": { "$ref": "#/definitions/money" },
+                        "unitPrice": { "type": ["string", "null"] },
+                        "priceSource": {
+                            "type": ["string", "null"],
+                            "enum": [
+                                "BUY_BOX",
+                                "DEAL_PRICE",
+                                "CORE_PRICE_DISPLAY",
+                                "JSON_LD",
+                                "SEARCH_CARD",
+                                "TWISTER",
+                                "DETAIL_BULLETS",
+                                null
+                            ]
+                        },
+                        "status": { "$ref": "#/definitions/fieldStatus" }
+                    }
+                },
+                "availability": {
+                    "type": "object",
+                    "required": ["state", "status"],
+                    "properties": {
+                        "state": {
+                            "type": "string",
+                            "enum": ["IN_STOCK", "OUT_OF_STOCK", "PREORDER", "BACKORDER", "LIMITED_STOCK", "UNKNOWN"]
+                        },
+                        "status": { "$ref": "#/definitions/fieldStatus" }
+                    }
+                },
+                "rankings": {
+                    "type": "object",
+                    "required": ["mainBSR", "all", "source", "status"],
+                    "properties": {
+                        "mainBSR": { "type": ["integer", "null"], "minimum": 1 },
+                        "mainBSRCategory": { "type": ["string", "null"] },
+                        "all": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "required": ["rank", "category"],
+                                "properties": {
+                                    "rank": { "type": "integer", "minimum": 1 },
+                                    "category": { "type": "string" }
+                                }
+                            }
+                        },
+                        "boughtInPastMonthRaw": { "type": ["string", "null"] },
+                        "boughtInPastMonthMin": { "type": ["integer", "null"] },
+                        "source": {
+                            "type": ["string", "null"],
+                            "enum": ["DETAIL_BULLETS", "PRODUCT_DETAILS_TABLE", "PRODUCT_INFORMATION", null]
+                        },
+                        "status": { "$ref": "#/definitions/fieldStatus" }
+                    }
+                },
+                "ratings": {
+                    "type": "object",
+                    "required": ["rating", "reviewCount", "status"],
+                    "properties": {
+                        "rating": { "type": ["number", "null"], "minimum": 0, "maximum": 5 },
+                        "reviewCount": { "type": ["integer", "null"], "minimum": 0 },
+                        "starDistribution": { "type": ["object", "null"] },
+                        "status": { "$ref": "#/definitions/fieldStatus" }
+                    }
+                },
+                "buyBox": {
+                    "type": "object",
+                    "required": ["present", "seller", "fulfillment", "status"],
+                    "properties": {
+                        "present": { "type": "boolean" },
+                        "seller": { "type": ["string", "null"] },
+                        "sellerId": { "type": ["string", "null"] },
+                        "price": { "$ref": "#/definitions/money" },
+                        "shipsFrom": { "type": ["string", "null"] },
+                        "fulfillment": { "type": "string", "enum": ["AMZ", "FBA", "FBM", "UNKNOWN"] },
+                        "amazonIsSeller": { "type": ["boolean", "null"] },
+                        "status": { "$ref": "#/definitions/fieldStatus" }
+                    }
+                },
+                "variants": {
+                    "type": "object",
+                    "required": ["mode", "dimensions", "items", "truncated", "status"],
+                    "properties": {
+                        "mode": { "type": "string", "enum": ["none", "discover", "price", "full"] },
+                        "dimensions": { "type": "array", "items": { "type": "string" } },
+                        "items": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "required": ["asin", "options"],
+                                "properties": {
+                                    "asin": { "type": "string", "pattern": "^[A-Z0-9]{10}$" },
+                                    "options": { "type": "object" },
+                                    "price": { "$ref": "#/definitions/money" },
+                                    "availability": { "type": "string" },
+                                    "status": { "$ref": "#/definitions/fieldStatus" }
+                                }
+                            }
+                        },
+                        "truncated": { "type": "boolean" },
+                        "truncatedAt": { "type": "integer" },
+                        "status": { "$ref": "#/definitions/fieldStatus" }
+                    }
+                },
+                "product": { "type": "object", "required": ["bullets", "specifications", "status"] },
+                "media": { "type": "object", "required": ["mainImage", "images", "status"] },
+                "location": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "requestedCountry",
+                        "requestedPostalCode",
+                        "resolvedPostalCode",
+                        "applied",
+                        "method",
+                        "status"
+                    ],
+                    "properties": {
+                        "requestedCountry": { "type": ["string", "null"] },
+                        "requestedPostalCode": { "type": ["string", "null"] },
+                        "resolvedPostalCode": { "type": ["string", "null"] },
+                        "applied": { "type": "boolean" },
+                        "method": {
+                            "type": ["string", "null"],
+                            "enum": ["SESSION_COOKIE", "QUERY_PARAM", "NONE", null]
+                        },
+                        "status": { "$ref": "#/definitions/fieldStatus" }
+                    }
+                },
+                "sources": { "type": "object" },
+                "quality": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "completenessScore",
+                        "fetchAttempts",
+                        "proxyTier",
+                        "pageType",
+                        "blocked",
+                        "criticalFieldsMissing",
+                        "warnings",
+                        "parserVersion"
+                    ],
+                    "properties": {
+                        "completenessScore": { "type": "integer", "minimum": 0, "maximum": 100 },
+                        "fetchAttempts": { "type": "integer", "minimum": 0 },
+                        "proxyTier": { "$ref": "#/definitions/proxyTier" },
+                        "pageType": {
+                            "type": "string",
+                            "enum": [
+                                "STANDARD_PRODUCT",
+                                "BOOK_OR_MEDIA",
+                                "VARIATION_PARENT",
+                                "UNAVAILABLE",
+                                "NOT_FOUND",
+                                "CHALLENGE",
+                                "SEARCH",
+                                "UNKNOWN"
+                            ]
+                        },
+                        "blocked": { "type": "boolean" },
+                        "criticalFieldsMissing": { "type": "array", "items": { "type": "string" } },
+                        "warnings": { "type": "array", "items": { "type": "string" } },
+                        "parserVersion": { "type": "string" }
+                    }
+                },
+                "discoveredFrom": { "type": "array" },
+                "deprecations": { "type": "array", "items": { "type": "string" } }
+            }
+        },
+        "failureRecord": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "schemaVersion",
+                "status",
+                "scrapedAt",
+                "input",
+                "marketplace",
+                "asin",
+                "attempts",
+                "reason",
+                "lastProxyTier",
+                "chargedProductEvent"
+            ],
+            "properties": {
+                "schemaVersion": { "const": "1.1" },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "PRODUCT_NOT_FOUND",
+                        "INVALID_INPUT",
+                        "BLOCKED",
+                        "FETCH_FAILED",
+                        "PARSER_ERROR",
+                        "GEO_RESTRICTED",
+                        "REQUIRES_LOCATION",
+                        "RUN_ABORTED"
+                    ],
+                    "description": "SUCCESS is deliberately absent: a failure row can never claim success."
+                },
+                "scrapedAt": { "$ref": "#/definitions/isoInstant" },
+                "input": { "$ref": "#/definitions/inputRef" },
+                "marketplace": { "oneOf": [{ "$ref": "#/definitions/marketplace" }, { "type": "null" }] },
+                "asin": { "type": ["string", "null"] },
+                "attempts": { "type": "integer", "minimum": 0 },
+                "reason": { "type": "string" },
+                "lastProxyTier": { "$ref": "#/definitions/proxyTier" },
+                "chargedProductEvent": {
+                    "const": false,
+                    "description": "Appendix C: a failure row can never report a charge."
+                },
+                "message": { "type": "string" }
+            }
+        }
+    }
+}

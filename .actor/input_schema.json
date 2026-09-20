@@ -1,0 +1,159 @@
+{
+    "title": "Amazon Product Intelligence Actor",
+    "description": "Give the Actor ASINs, product URLs or keywords. Every input you provide is accounted for in the output: either a product record or a structured failure row explaining exactly what happened.",
+    "type": "object",
+    "schemaVersion": 1,
+    "properties": {
+        "mode": {
+            "title": "Mode",
+            "type": "string",
+            "description": "fast = cheap extraction from search/listing pages. detail = full product page extraction (default).",
+            "editor": "select",
+            "default": "detail",
+            "enum": ["fast", "detail"],
+            "enumTitles": [
+                "Fast - listing data only, cheapest",
+                "Detail - full product page (default)"
+            ]
+        },
+        "marketplace": {
+            "title": "Marketplace",
+            "type": "string",
+            "description": "Which Amazon marketplace to use. Product URLs from a different marketplace are respected and reported per record.",
+            "editor": "select",
+            "default": "US",
+            "enum": ["US", "UK", "DE"],
+            "enumTitles": ["Amazon.com (US)", "Amazon.co.uk (UK)", "Amazon.de (DE)"]
+        },
+        "asins": {
+            "title": "ASINs",
+            "type": "array",
+            "description": "One or more 10-character ASINs, e.g. B0CX23V2ZK. Invalid entries are returned as INVALID_INPUT rows rather than dropped.",
+            "editor": "stringList",
+            "prefill": ["B0CX23V2ZK"],
+            "sectionCaption": "Inputs"
+        },
+        "urls": {
+            "title": "Amazon URLs",
+            "type": "array",
+            "description": "Product, search, category or best-seller URLs. Storefront/seller input is planned for V1.2 and currently returns a structured INVALID_INPUT row.",
+            "editor": "requestListSources",
+            "default": []
+        },
+        "keywords": {
+            "title": "Keywords",
+            "type": "array",
+            "description": "Search keywords. Each keyword is crawled up to 'Max search pages'.",
+            "editor": "stringList",
+            "default": []
+        },
+        "datasetId": {
+            "title": "Input dataset ID",
+            "type": "string",
+            "description": "Read inputs from an existing Apify dataset instead of pasting them.",
+            "editor": "resourcePicker",
+            "resourceType": "dataset",
+            "resourcePermissions": ["READ"]
+        },
+        "datasetField": {
+            "title": "Input dataset field",
+            "type": "string",
+            "description": "Which field of the input dataset holds the ASIN or URL.",
+            "editor": "textfield",
+            "default": "asin"
+        },
+        "deliveryCountry": {
+            "title": "Delivery country",
+            "type": "string",
+            "description": "Optional delivery context. Amazon shows different prices and delivery promises by location.",
+            "editor": "textfield",
+            "sectionCaption": "Delivery location"
+        },
+        "postalCode": {
+            "title": "Postal code",
+            "type": "string",
+            "description": "Optional postal code, e.g. 10001. Applied once per session and verified from the page. Every record reports whether it was applied.",
+            "editor": "textfield"
+        },
+        "requireLocation": {
+            "title": "Require the location to be applied",
+            "type": "boolean",
+            "description": "When on, a product whose delivery location could not be applied is returned as REQUIRES_LOCATION instead of a success with an unlocalized price. Recommended for price tracking.",
+            "default": false
+        },
+        "variantMode": {
+            "title": "Variant mode",
+            "type": "string",
+            "description": "none = skip. discover = child ASINs and option matrix at no extra request cost (default). price = also fetch each child's current price and stock. full = full detail per child.",
+            "editor": "select",
+            "default": "discover",
+            "enum": ["none", "discover", "price", "full"],
+            "enumTitles": [
+                "None",
+                "Discover - child ASINs + options (no extra cost)",
+                "Price - child prices and stock (extra requests)",
+                "Full - full detail per child (most expensive)"
+            ],
+            "sectionCaption": "Optional data"
+        },
+        "maxProducts": {
+            "title": "Max products",
+            "type": "integer",
+            "description": "Hard ceiling on products processed in this run.",
+            "default": 1000,
+            "minimum": 1,
+            "unit": "products",
+            "sectionCaption": "Limits and cost control"
+        },
+        "maxSearchPages": {
+            "title": "Max search pages per keyword",
+            "type": "integer",
+            "default": 5,
+            "minimum": 1,
+            "maximum": 20
+        },
+        "maxVariants": {
+            "title": "Max variants per parent",
+            "type": "integer",
+            "description": "Ceiling on deep child fetches. Discovery is unaffected.",
+            "default": 50,
+            "minimum": 1
+        },
+        "maxRetries": {
+            "title": "Max retries per request",
+            "type": "integer",
+            "default": 3,
+            "minimum": 0,
+            "maximum": 10
+        },
+        "deduplicate": {
+            "title": "Deduplicate results",
+            "type": "boolean",
+            "description": "Deduplicate on marketplace + ASIN + resolved delivery location. Discovery sources are merged into discoveredFrom rather than emitted twice.",
+            "default": true
+        },
+        "allowResidentialFallback": {
+            "title": "Allow residential proxy fallback",
+            "type": "boolean",
+            "description": "When off, the Actor never escalates to residential proxies and returns BLOCKED instead. Cheaper and fully predictable, at a higher block rate.",
+            "default": true
+        },
+        "proxyConfiguration": {
+            "title": "Proxy configuration",
+            "type": "object",
+            "description": "Amazon requires proxies. High-volume users can supply their own external proxy URLs here, which keeps that traffic off the platform bill entirely.",
+            "editor": "proxy",
+            "default": { "useApifyProxy": true },
+            "sectionCaption": "Proxy"
+        },
+        "schemaVersion": {
+            "title": "Expected schema version",
+            "type": "string",
+            "description": "Echo of the output schema your integration expects. A mismatch produces a run warning, never a failure.",
+            "editor": "textfield",
+            "default": "1.1",
+            "sectionCaption": "Advanced"
+        }
+    },
+    "required": []
+}
