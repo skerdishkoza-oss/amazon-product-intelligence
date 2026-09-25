@@ -116,8 +116,27 @@ export function extractFirstMoney(input: string, cfg: MarketplaceConfig): MoneyI
     return null;
 }
 
-/** Integer counts such as review counts: "1,820 ratings" -> 1820, "1.820" (DE) -> 1820. */
+/**
+ * Integer counts such as review counts: "1,820 ratings" -> 1820,
+ * "1.820" (DE) -> 1820, and compact search-card counts such as "45K" ->
+ * 45000. Compact suffixes reuse the marketplace vocabulary so localized
+ * forms such as "1,2 Tsd." are scaled without treating the decimal as a
+ * thousands separator.
+ */
 export function parseCount(input: string, cfg: MarketplaceConfig): number | null {
+    const magnitude = /([0-9][0-9.,\u00a0\u202f ]*)\s*([A-Za-z]{1,4})(?:\.|\b)/u.exec(input);
+    if (magnitude?.[1] !== undefined && magnitude[2] !== undefined) {
+        const multiplier = cfg.labels.demandMultipliers.find(
+            (entry) => entry.suffix.toLowerCase() === magnitude[2]?.toLowerCase(),
+        );
+        if (multiplier !== undefined) {
+            const compact = parseLocalizedNumber(magnitude[1].trim(), cfg);
+            if (compact === null) return null;
+            const scaled = compact.value * multiplier.factor;
+            return Number.isSafeInteger(scaled) && scaled >= 0 ? scaled : null;
+        }
+    }
+
     const digitsOnly = input.replace(/[^0-9]/g, '');
     if (digitsOnly === '') return null;
     const parsed = parseLocalizedNumber(input.replace(/[^0-9.,\u00a0 ]/g, ''), cfg);

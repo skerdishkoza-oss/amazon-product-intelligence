@@ -33,7 +33,7 @@ import type {
 import { SCHEMA_VERSION } from '../types/output.js';
 import { FIELD_STATUS, RECORD_STATUS, type FailureReason, type FieldStatus, type RecordStatus } from '../types/status.js';
 
-export const PARSER_VERSION = '2026-09-21.1';
+export const PARSER_VERSION = '2026-09-25.1';
 
 /** C1: ISO 8601 UTC with a Z suffix, taken at response receipt. */
 export function nowIso(): string {

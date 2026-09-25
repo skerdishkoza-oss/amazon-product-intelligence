@@ -85,6 +85,9 @@ test('extractFirstMoney handles Amazon duplicate-render nodes', () => {
 test('parseCount handles localized separators', () => {
     assert.equal(parseCount('1,820 ratings', US), 1820);
     assert.equal(parseCount('1.820 Bewertungen', DE), 1820);
+    assert.equal(parseCount('45K+ ratings', US), 45_000);
+    assert.equal(parseCount('1.2K ratings', US), 1_200);
+    assert.equal(parseCount('1,2 Tsd. Bewertungen', DE), 1_200);
     assert.equal(parseCount('no digits', US), null);
 });
 

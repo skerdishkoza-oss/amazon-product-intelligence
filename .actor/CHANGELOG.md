@@ -8,6 +8,7 @@
 - Made monitoring baselines delivery-location-specific and suppressed false changes when either observation has a parser miss or another untrusted field status.
 - Appended and schema-validated each success before attempting its billing event. Base commits are serialized so a discovered charge cap stops waiting workers before they emit value.
 - Added explicit monitoring comparison warnings and passed the real filtered-out count into `RUN_SUMMARY`.
+- Added per-reason discovery-filter diagnostics and corrected compact live review counts such as `45K` and localized `1,2 Tsd.` before threshold filtering.
 
 ## 1.4 — 2026-09-20
 
