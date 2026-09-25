@@ -87,6 +87,16 @@
                 "type": "object",
                 "title": "Variants"
             },
+            "product": {
+                "type": "object",
+                "title": "Product content",
+                "description": "Bullets, description, specifications and category breadcrumb."
+            },
+            "media": {
+                "type": "object",
+                "title": "Media",
+                "description": "Main image, normalized gallery images and product videos."
+            },
             "offers": {
                 "type": "object",
                 "title": "Offers",
@@ -151,11 +161,14 @@
                     "ratings",
                     "buyBox",
                     "variants",
+                    "product",
+                    "media",
                     "offers",
                     "sellerProfiles",
                     "monitoring",
                     "location",
                     "quality",
+                    "discoveredFrom",
                     "canonicalUrl"
                 ]
             },
