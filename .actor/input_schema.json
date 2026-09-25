@@ -36,11 +36,13 @@
             "title": "Custom data blocks",
             "type": "array",
             "description": "Used when Data profile is Custom. Identity, source, location and quality metadata are always returned. Offers and seller profiles have separate per-result billing events.",
+            "editor": "select",
             "default": [],
             "uniqueItems": true,
             "items": {
                 "type": "string",
-                "enum": ["pricing", "availability", "ratings", "rankings", "buyBox", "variants", "product", "media", "offers", "sellerProfiles"]
+                "enum": ["pricing", "availability", "ratings", "rankings", "buyBox", "variants", "product", "media", "offers", "sellerProfiles"],
+                "enumTitles": ["Pricing", "Availability", "Ratings", "Rankings / BSR", "Buy Box", "Variants", "Product content", "Media", "Offers", "Seller profiles"]
             }
         },
         "marketplace": {
@@ -90,19 +92,20 @@
             "default": {},
             "additionalProperties": false,
             "properties": {
-                "minPrice": { "title": "Minimum price", "type": "number", "minimum": 0 },
-                "maxPrice": { "title": "Maximum price", "type": "number", "minimum": 0 },
-                "minRating": { "title": "Minimum rating", "type": "number", "minimum": 0, "maximum": 5 },
-                "minReviewCount": { "title": "Minimum review count", "type": "integer", "minimum": 0 },
-                "primeOnly": { "title": "Prime only", "type": "boolean", "default": false },
+                "minPrice": { "title": "Minimum price", "description": "Exclude discovery cards whose displayed price is below this amount.", "type": "number", "minimum": 0 },
+                "maxPrice": { "title": "Maximum price", "description": "Exclude discovery cards whose displayed price is above this amount.", "type": "number", "minimum": 0 },
+                "minRating": { "title": "Minimum rating", "description": "Require at least this displayed star rating on the discovery card.", "type": "number", "minimum": 0, "maximum": 5 },
+                "minReviewCount": { "title": "Minimum review count", "description": "Require at least this many displayed reviews on the discovery card.", "type": "integer", "minimum": 0 },
+                "primeOnly": { "title": "Prime only", "description": "Keep only discovery cards that display an Amazon Prime signal.", "type": "boolean", "default": false },
                 "sponsoredPolicy": {
                     "title": "Sponsored results",
+                    "description": "Include all results, exclude sponsored cards, or keep only sponsored cards.",
                     "type": "string",
                     "enum": ["include", "exclude", "only"],
                     "default": "include"
                 },
-                "minBoughtInPastMonth": { "title": "Minimum bought in past month", "type": "integer", "minimum": 0 },
-                "minDiscountPercent": { "title": "Minimum discount percent", "type": "number", "minimum": 0, "maximum": 100 }
+                "minBoughtInPastMonth": { "title": "Minimum bought in past month", "description": "Require the discovery card to report at least this recent purchase count.", "type": "integer", "minimum": 0 },
+                "minDiscountPercent": { "title": "Minimum discount percent", "description": "Require at least this displayed discount percentage on the discovery card.", "type": "number", "minimum": 0, "maximum": 100 }
             },
             "sectionCaption": "Discovery filters"
         },
