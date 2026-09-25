@@ -40,7 +40,7 @@ import {
 } from '../output/record-builder.js';
 import { FIELD_STATUS, FAILURE_REASON, RECORD_STATUS, type FailureReason } from '../types/status.js';
 import type { AvailabilityState, MarketplaceCode, OffersBlock, ProductBillingEvent, ProductRecord, SellerProfile, SellerProfilesBlock, VariantItem } from '../types/output.js';
-import { matchDiscoveryCard } from './discovery-filter.js';
+import { matchDiscoveryCard, type DiscoveryFilterReason } from './discovery-filter.js';
 import { WorkQueue, type WorkItem } from './queue.js';
 
 export interface RunDeps {
@@ -64,6 +64,8 @@ export interface RunOutcome {
     searchPagesFetched: number;
     discoveryTruncated: boolean;
     filteredOut: number;
+    /** Counts every failed predicate; one card can contribute more than one reason. */
+    filterRejections: Partial<Record<DiscoveryFilterReason, number>>;
     aborted: number;
     abortReason: FailureReason | null;
     peakConcurrency: number;
@@ -207,6 +209,7 @@ export async function runPipeline(deps: RunDeps): Promise<RunOutcome> {
         searchPages: 0,
         discoveryTruncated: false,
         filteredOut: 0,
+        filterRejections: {} as Partial<Record<DiscoveryFilterReason, number>>,
         abortReason: null as FailureReason | null,
         peakConcurrency: 0,
         monitoringChecked: 0,
@@ -635,6 +638,9 @@ export async function runPipeline(deps: RunDeps): Promise<RunOutcome> {
                 const filter = matchDiscoveryCard(card, input.discoveryFilters);
                 if (!filter.matches) {
                     state.filteredOut += 1;
+                    for (const reason of filter.reasons) {
+                        state.filterRejections[reason] = (state.filterRejections[reason] ?? 0) + 1;
+                    }
                     continue;
                 }
                 const discovery = {
@@ -1051,6 +1057,9 @@ export async function runPipeline(deps: RunDeps): Promise<RunOutcome> {
         searchPagesFetched: state.searchPages,
         discoveryTruncated: state.discoveryTruncated,
         filteredOut: state.filteredOut,
+        filterRejections: Object.fromEntries(
+            Object.entries(state.filterRejections).sort(([left], [right]) => left.localeCompare(right)),
+        ),
         aborted: pending.length,
         abortReason: state.abortReason,
         peakConcurrency: state.peakConcurrency,

@@ -16,6 +16,7 @@ export interface SummaryInputs {
     marketplaces: MarketplaceCode[];
     mode: string;
     filteredOut: number;
+    filterRejections: Record<string, number>;
     discoveredProducts: number;
     searchPagesFetched: number;
     discoveryTruncated: boolean;
@@ -66,6 +67,7 @@ export function buildRunSummary(args: SummaryInputs): RunSummary {
         accountingInvariantHolds: args.accounting.holds(),
         duplicatesMerged: args.accounting.merged,
         filteredOut: args.filteredOut,
+        filterRejections: args.filterRejections,
         discoveredProducts: args.discoveredProducts,
         searchPagesFetched: args.searchPagesFetched,
         discoveryTruncated: args.discoveryTruncated,

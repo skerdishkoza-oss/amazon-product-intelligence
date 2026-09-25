@@ -234,6 +234,7 @@ test('discovery filters prevent unwanted detail fetches and report the count', a
     }, fetcher);
 
     assert.equal(outcome.filteredOut, 1);
+    assert.deepEqual(outcome.filterRejections, { SPONSORED_EXCLUDED: 1 });
     assert.equal(outcome.discovered, 2);
     assert.equal(fetcher.requests.filter((request) => request.label === 'PRODUCT').length, 2);
 });
@@ -495,6 +496,7 @@ test('the charge cap winds the run down and the summary still balances (C8)', as
         marketplaces: ['US'],
         mode: 'detail',
         filteredOut: 0,
+        filterRejections: {},
         discoveredProducts: outcome.discovered,
         searchPagesFetched: outcome.searchPagesFetched,
         discoveryTruncated: outcome.discoveryTruncated,

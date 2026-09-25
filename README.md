@@ -163,6 +163,7 @@ Successful rows are schema-validated and acknowledged by the dataset before thei
 - **Not-found pages are never retried or escalated.** A dog page is an answer about the product, not a transport failure.
 - **`variantMode: discover` costs zero extra requests**, because the parent page's twister payload already contains the full child-ASIN-to-option matrix.
 - **Discovery filters run before product fetches**, so excluded listing cards consume neither detail-page proxy traffic nor product events.
+- **Zero-result filtered runs are explainable.** `RUN_SUMMARY.filteredOut` counts rejected cards and `RUN_SUMMARY.filterRejections` aggregates failed predicates such as `NOT_PRIME` or `REVIEW_COUNT_MISSING`. A card can fail multiple predicates, so reason counts can exceed the rejected-card count.
 - **`maxProducts` is reserved before concurrent work starts**, making the ceiling exact even when concurrency is higher than the limit.
 
 ## Layout

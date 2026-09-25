@@ -390,6 +390,8 @@ export interface RunSummary {
     accountingInvariantHolds: boolean;
     duplicatesMerged: number;
     filteredOut: number;
+    /** Failed filter predicates. Totals can exceed filteredOut when a card fails multiple filters. */
+    filterRejections: Record<string, number>;
     /** Products found by keyword/category discovery rather than requested directly. */
     discoveredProducts: number;
     searchPagesFetched: number;
