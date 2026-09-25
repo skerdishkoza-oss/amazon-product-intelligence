@@ -43,6 +43,8 @@ export interface HttpFetcherOptions {
 
 export const FETCHER_DEFAULTS = {
     residentialBudgetRatio: 0.25,
+    /** Optional detail surfaces commonly need one fallback for each blocked DC request. */
+    reliableResidentialBudgetRatio: 0.5,
     requestTimeoutSecs: 45,
     /** 9.5: halve concurrency above this trailing block rate. */
     blockRateWarn: 0.35,

@@ -2,12 +2,25 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildLocationPayload, extractCsrfToken, verifyLocation } from '../../fetch/location-primer.js';
+import {
+    buildLocationPayload,
+    extractCsrfToken,
+    isLocationUpdateAccepted,
+    verifyLocation,
+} from '../../fetch/location-primer.js';
 import * as F from '../fixtures/pages.js';
 
 test('the anti-CSRF token is read from the location modal', () => {
     assert.equal(extractCsrfToken(F.LOCATION_MODAL), 'gKp9Example+Token/AbC=');
+    assert.equal(extractCsrfToken('<div csrfToken="toaster-token+/="></div>'), 'toaster-token+/=');
     assert.equal(extractCsrfToken('<div>no token here</div>'), null);
+});
+
+test('location-update responses reject explicit failures', () => {
+    assert.equal(isLocationUpdateAccepted(200, '{"sembuUpdated":true}'), true);
+    assert.equal(isLocationUpdateAccepted(200, '{"sembuUpdated":false}'), false);
+    assert.equal(isLocationUpdateAccepted(200, '<div>accepted</div>'), true);
+    assert.equal(isLocationUpdateAccepted(403, '{"sembuUpdated":true}'), false);
 });
 
 test('an applied location is verified from the page, not assumed', () => {

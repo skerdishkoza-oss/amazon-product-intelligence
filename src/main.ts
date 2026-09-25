@@ -164,7 +164,13 @@ if (externalProxyUrls.length > 0) {
 const fetcher = new HttpFetcher({
     maxRetries: input.maxRetries,
     allowResidentialFallback: input.allowResidentialFallback,
-    residentialBudgetRatio: FETCHER_DEFAULTS.residentialBudgetRatio,
+    residentialBudgetRatio: input.postalCode !== null
+        || input.includeOffers
+        || input.includeSellerDetails
+        || input.variantMode === 'price'
+        || input.variantMode === 'full'
+        ? FETCHER_DEFAULTS.reliableResidentialBudgetRatio
+        : FETCHER_DEFAULTS.residentialBudgetRatio,
     proxyConfiguration,
     residentialProxyConfiguration,
     primaryProxyTier: externalProxyUrls.length > 0
