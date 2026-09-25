@@ -161,7 +161,16 @@ export class HttpFetcher implements Fetcher {
             'cache-control': 'no-cache',
             pragma: 'no-cache',
         };
-        if (request.label === 'OFFERS') headers['x-requested-with'] = 'XMLHttpRequest';
+        if (request.label === 'OFFERS') {
+            const asin = new URL(request.url).searchParams.get('asin');
+            headers.accept = 'text/html,*/*';
+            headers['x-requested-with'] = 'XMLHttpRequest';
+            headers['sec-fetch-dest'] = 'empty';
+            headers['sec-fetch-mode'] = 'cors';
+            headers['sec-fetch-site'] = 'same-origin';
+            delete headers['sec-fetch-user'];
+            if (asin !== null) headers.referer = `https://${cfg.host}/dp/${asin}`;
+        }
         return headers;
     }
 

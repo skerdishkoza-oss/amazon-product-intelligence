@@ -41,7 +41,7 @@ export const UK: MarketplaceConfig = {
     paths: {
         product: '/dp/{asin}',
         search: '/s?k={keyword}',
-        offers: '/gp/product/ajax/ref=dp_aod_ALL_mbc?asin={asin}',
+        offers: '/gp/product/ajax/ref=aod_f_new?asin={asin}&pc=dp&experienceId=aodAjaxMain',
         bestsellers: '/gp/bestsellers',
     },
 };
