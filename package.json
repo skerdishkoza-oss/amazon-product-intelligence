@@ -1,7 +1,7 @@
 {
   "name": "amazon-product-intelligence",
-  "version": "1.4.0",
-  "description": "Amazon Product Intelligence Actor - prices, variants, sellers, BSR with explicit data-quality semantics",
+  "version": "1.5.0",
+  "description": "Amazon product intelligence with pre-fetch filters, selectable data profiles and verified quality semantics",
   "type": "module",
   "engines": {
     "node": ">=20"

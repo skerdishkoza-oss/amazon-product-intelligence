@@ -3,6 +3,41 @@
 import type { MarketplaceCode, VariantMode } from './output.js';
 
 export type RunMode = 'fast' | 'detail' | 'intelligence' | 'monitor';
+export type DataProfile = 'essential' | 'catalog' | 'competitive' | 'custom';
+export type DataBlock =
+    | 'pricing'
+    | 'availability'
+    | 'ratings'
+    | 'rankings'
+    | 'buyBox'
+    | 'variants'
+    | 'product'
+    | 'media'
+    | 'offers'
+    | 'sellerProfiles';
+export type SponsoredPolicy = 'include' | 'exclude' | 'only';
+
+export interface DiscoveryFiltersInput {
+    minPrice?: number | null;
+    maxPrice?: number | null;
+    minRating?: number | null;
+    minReviewCount?: number | null;
+    primeOnly?: boolean;
+    sponsoredPolicy?: string;
+    minBoughtInPastMonth?: number | null;
+    minDiscountPercent?: number | null;
+}
+
+export interface DiscoveryFilters {
+    minPrice: number | null;
+    maxPrice: number | null;
+    minRating: number | null;
+    minReviewCount: number | null;
+    primeOnly: boolean;
+    sponsoredPolicy: SponsoredPolicy;
+    minBoughtInPastMonth: number | null;
+    minDiscountPercent: number | null;
+}
 
 export interface ProxyInput {
     useApifyProxy?: boolean;
@@ -25,6 +60,9 @@ export interface RawActorInput {
     deliveryCountry?: string | null;
     postalCode?: string | null;
     requireLocation?: boolean;
+    dataProfile?: string;
+    dataBlocks?: unknown;
+    discoveryFilters?: DiscoveryFiltersInput | null;
     variantMode?: string;
     includeOffers?: boolean;
     maxOffersPerProduct?: number;
@@ -52,6 +90,10 @@ export interface ActorInput {
     deliveryCountry: string | null;
     postalCode: string | null;
     requireLocation: boolean;
+    dataProfile: DataProfile;
+    /** Resolved blocks after expanding the selected profile and legacy flags. */
+    dataBlocks: DataBlock[];
+    discoveryFilters: DiscoveryFilters;
     variantMode: VariantMode;
     includeOffers: boolean;
     maxOffersPerProduct: number;
@@ -73,6 +115,17 @@ export const INPUT_DEFAULTS = {
     marketplace: 'US',
     datasetField: 'asin',
     requireLocation: false,
+    dataProfile: 'catalog',
+    discoveryFilters: {
+        minPrice: null,
+        maxPrice: null,
+        minRating: null,
+        minReviewCount: null,
+        primeOnly: false,
+        sponsoredPolicy: 'include',
+        minBoughtInPastMonth: null,
+        minDiscountPercent: null,
+    },
     variantMode: 'discover',
     includeOffers: false,
     maxOffersPerProduct: 10,

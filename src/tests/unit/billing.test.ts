@@ -38,6 +38,16 @@ test('a successful record charges exactly once', async () => {
     assert.equal(billing.stats().successfulPaidEvents, 1);
 });
 
+test('essential product selection has its own billing event', async () => {
+    const backend = new NoopChargingBackend();
+    const billing = new BillingEvents(backend);
+    const outcome = await billing.chargeProductEssential(RECORD_STATUS.SUCCESS);
+
+    assert.equal(outcome.charged, true);
+    assert.equal(outcome.eventName, 'product-essential');
+    assert.deepEqual(backend.calls, [{ eventName: 'product-essential', count: 1 }]);
+});
+
 test('charge cap stops further charging and signals wind-down (C8)', async () => {
     const backend = new NoopChargingBackend(2);
     const billing = new BillingEvents(backend);

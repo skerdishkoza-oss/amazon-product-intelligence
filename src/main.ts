@@ -88,7 +88,13 @@ if (input.compareWithDatasetId !== null) {
     const previousDataset = await Actor.openDataset<Record<string, unknown>>({ id: input.compareWithDatasetId });
     await previousDataset.forEach((record) => {
         if (record.status !== 'SUCCESS' || typeof record.marketplace !== 'string' || typeof record.asin !== 'string') return;
-        previousRecords.set(historyKey(record.marketplace, record.asin), record);
+        const location = record.location;
+        const resolvedPostalCode = location !== null
+            && typeof location === 'object'
+            && typeof (location as Record<string, unknown>).resolvedPostalCode === 'string'
+            ? String((location as Record<string, unknown>).resolvedPostalCode)
+            : null;
+        previousRecords.set(historyKey(record.marketplace, record.asin, resolvedPostalCode), record);
     });
     log.info('loaded previous product state', {
         datasetId: input.compareWithDatasetId,
@@ -97,6 +103,8 @@ if (input.compareWithDatasetId !== null) {
 }
 log.info('run configuration', {
     mode: input.mode,
+    dataProfile: input.dataProfile,
+    dataBlocks: input.dataBlocks,
     marketplace: input.marketplace,
     asins: input.asins.length,
     urls: input.urls.length,
@@ -203,7 +211,7 @@ const summary = buildRunSummary({
     runStartedAt,
     marketplaces: [...runMarketplaces],
     mode: input.mode,
-    filteredOut: 0,
+    filteredOut: outcome.filteredOut,
     discoveredProducts: outcome.discovered,
     searchPagesFetched: outcome.searchPagesFetched,
     discoveryTruncated: outcome.discoveryTruncated,

@@ -8,13 +8,27 @@
  */
 
 import { isSupportedMarketplace, SUPPORTED_MARKETPLACES } from '../amazon/marketplace-config/index.js';
-import { INPUT_DEFAULTS, type ActorInput, type RawActorInput, type RunMode } from '../types/input.js';
+import {
+    INPUT_DEFAULTS,
+    type ActorInput,
+    type DataBlock,
+    type DataProfile,
+    type DiscoveryFilters,
+    type DiscoveryFiltersInput,
+    type RawActorInput,
+    type RunMode,
+    type SponsoredPolicy,
+} from '../types/input.js';
 import type { MarketplaceCode, VariantMode } from '../types/output.js';
 import { FAILURE_REASON, type FailureReason } from '../types/status.js';
 import { canonicalProductUrl, normalizeAsin, searchUrl } from './normalizer.js';
+import { DATA_BLOCKS, resolveDataBlocks } from './profiles.js';
 
 const MODES: RunMode[] = ['fast', 'detail', 'intelligence', 'monitor'];
 const VARIANT_MODES: VariantMode[] = ['none', 'discover', 'price', 'full'];
+const DATA_PROFILES: DataProfile[] = ['essential', 'catalog', 'competitive', 'custom'];
+const SPONSORED_POLICIES: SponsoredPolicy[] = ['include', 'exclude', 'only'];
+const FAST_BLOCKS = new Set<DataBlock>(['pricing', 'availability', 'ratings', 'rankings', 'media']);
 
 export class InputError extends Error {
     constructor(message: string) {
@@ -73,6 +87,58 @@ function bool(value: unknown, fallback: boolean): boolean {
     return typeof value === 'boolean' ? value : fallback;
 }
 
+function optionalNumber(value: unknown, field: string, min: number, max: number, integer = false): number | null {
+    if (value === undefined || value === null || value === '') return null;
+    if (typeof value !== 'number' || !Number.isFinite(value)) throw new InputError(`${field} must be a finite number`);
+    if (integer && !Number.isInteger(value)) throw new InputError(`${field} must be an integer`);
+    if (value < min || value > max) throw new InputError(`${field} must be between ${min} and ${max}`);
+    return value;
+}
+
+function validateDiscoveryFilters(raw: DiscoveryFiltersInput | null | undefined): DiscoveryFilters {
+    if (raw === undefined || raw === null) return { ...INPUT_DEFAULTS.discoveryFilters };
+    if (typeof raw !== 'object' || Array.isArray(raw)) throw new InputError('discoveryFilters must be an object');
+
+    const allowed = new Set([
+        'minPrice',
+        'maxPrice',
+        'minRating',
+        'minReviewCount',
+        'primeOnly',
+        'sponsoredPolicy',
+        'minBoughtInPastMonth',
+        'minDiscountPercent',
+    ]);
+    const unknown = Object.keys(raw).filter((key) => !allowed.has(key));
+    if (unknown.length > 0) throw new InputError(`unknown discoveryFilters: ${unknown.join(', ')}`);
+
+    const sponsoredPolicy = (raw.sponsoredPolicy ?? INPUT_DEFAULTS.discoveryFilters.sponsoredPolicy) as SponsoredPolicy;
+    if (!SPONSORED_POLICIES.includes(sponsoredPolicy)) {
+        throw new InputError(`discoveryFilters.sponsoredPolicy must be one of ${SPONSORED_POLICIES.join(', ')}`);
+    }
+
+    const filters: DiscoveryFilters = {
+        minPrice: optionalNumber(raw.minPrice, 'discoveryFilters.minPrice', 0, 10_000_000),
+        maxPrice: optionalNumber(raw.maxPrice, 'discoveryFilters.maxPrice', 0, 10_000_000),
+        minRating: optionalNumber(raw.minRating, 'discoveryFilters.minRating', 0, 5),
+        minReviewCount: optionalNumber(raw.minReviewCount, 'discoveryFilters.minReviewCount', 0, 1_000_000_000, true),
+        primeOnly: bool(raw.primeOnly, INPUT_DEFAULTS.discoveryFilters.primeOnly),
+        sponsoredPolicy,
+        minBoughtInPastMonth: optionalNumber(
+            raw.minBoughtInPastMonth,
+            'discoveryFilters.minBoughtInPastMonth',
+            0,
+            1_000_000_000,
+            true,
+        ),
+        minDiscountPercent: optionalNumber(raw.minDiscountPercent, 'discoveryFilters.minDiscountPercent', 0, 100),
+    };
+    if (filters.minPrice !== null && filters.maxPrice !== null && filters.minPrice > filters.maxPrice) {
+        throw new InputError('discoveryFilters.minPrice cannot be greater than maxPrice');
+    }
+    return filters;
+}
+
 export function validateInput(raw: RawActorInput | null | undefined): ValidatedInput {
     const src = raw ?? {};
     const warnings: string[] = [];
@@ -80,6 +146,27 @@ export function validateInput(raw: RawActorInput | null | undefined): ValidatedI
 
     const mode = (src.mode ?? INPUT_DEFAULTS.mode) as RunMode;
     if (!MODES.includes(mode)) throw new InputError(`mode must be one of ${MODES.join(', ')}`);
+
+    const defaultProfile: DataProfile = mode === 'fast' ? 'essential' : INPUT_DEFAULTS.dataProfile;
+    const dataProfile = (src.dataProfile ?? defaultProfile) as DataProfile;
+    if (!DATA_PROFILES.includes(dataProfile)) {
+        throw new InputError(`dataProfile must be one of ${DATA_PROFILES.join(', ')}`);
+    }
+    let customBlocks: DataBlock[] = [];
+    if (src.dataBlocks !== undefined && src.dataBlocks !== null) {
+        if (!Array.isArray(src.dataBlocks) || src.dataBlocks.some((block) => typeof block !== 'string')) {
+            throw new InputError('dataBlocks must be an array of block names');
+        }
+        const invalid = src.dataBlocks.filter((block) => !DATA_BLOCKS.includes(block as DataBlock));
+        if (invalid.length > 0) throw new InputError(`unknown dataBlocks: ${invalid.join(', ')}`);
+        customBlocks = [...new Set(src.dataBlocks as DataBlock[])];
+    }
+    if (dataProfile === 'custom' && customBlocks.length === 0) {
+        throw new InputError('custom dataProfile requires at least one dataBlocks value');
+    }
+    if (dataProfile !== 'custom' && customBlocks.length > 0) {
+        warnings.push('dataBlocks is ignored unless dataProfile is custom');
+    }
 
     if (src.marketplace !== undefined && typeof src.marketplace !== 'string') {
         throw new InputError('marketplace must be a string');
@@ -170,16 +257,30 @@ export function validateInput(raw: RawActorInput | null | undefined): ValidatedI
     if (mode === 'monitor' && compareWithDatasetId === null) {
         throw new InputError('monitor mode requires compareWithDatasetId');
     }
-    if (src.includeSellerDetails === true && src.includeOffers !== true) {
+    const includeOffersRequested = bool(src.includeOffers, INPUT_DEFAULTS.includeOffers);
+    const includeSellerDetailsRequested = bool(src.includeSellerDetails, INPUT_DEFAULTS.includeSellerDetails);
+    const dataBlocks = resolveDataBlocks({
+        profile: dataProfile,
+        customBlocks,
+        includeOffers: includeOffersRequested,
+        includeSellerDetails: includeSellerDetailsRequested,
+    });
+    const includeOffers = dataBlocks.includes('offers');
+    const includeSellerDetails = dataBlocks.includes('sellerProfiles');
+
+    if (includeSellerDetails && !includeOffers) {
         warnings.push('includeSellerDetails is enabled without includeOffers; only the Buy Box seller can be enriched');
     }
-    if (mode === 'fast' && (src.includeOffers === true || src.includeSellerDetails === true)) {
-        throw new InputError('fast mode cannot include offers or seller details; use detail or intelligence mode');
+    if (mode === 'fast') {
+        const unsupported = dataBlocks.filter((block) => !FAST_BLOCKS.has(block));
+        if (unsupported.length > 0) {
+            throw new InputError(`fast mode cannot provide data blocks: ${unsupported.join(', ')}; use detail or intelligence mode`);
+        }
     }
 
-    const requestedSchemaVersion = src.schemaVersion ?? '1.4';
-    if (requestedSchemaVersion !== '1.4') {
-        warnings.push(`caller expects schemaVersion ${requestedSchemaVersion}; this Actor emits 1.4`);
+    const requestedSchemaVersion = src.schemaVersion ?? '1.5';
+    if (requestedSchemaVersion !== '1.5') {
+        warnings.push(`caller expects schemaVersion ${requestedSchemaVersion}; this Actor emits 1.5`);
     }
 
     const postalCode = src.postalCode?.trim() || null;
@@ -187,6 +288,8 @@ export function validateInput(raw: RawActorInput | null | undefined): ValidatedI
     if (requireLocation && postalCode === null) {
         warnings.push('requireLocation is on but no postalCode was given; no location will be applied');
     }
+
+    const discoveryFilters = validateDiscoveryFilters(src.discoveryFilters);
 
     const input: ActorInput = {
         mode,
@@ -199,10 +302,13 @@ export function validateInput(raw: RawActorInput | null | undefined): ValidatedI
         deliveryCountry: src.deliveryCountry?.trim() || null,
         postalCode,
         requireLocation,
+        dataProfile,
+        dataBlocks,
+        discoveryFilters,
         variantMode,
-        includeOffers: bool(src.includeOffers, INPUT_DEFAULTS.includeOffers),
+        includeOffers,
         maxOffersPerProduct: clampInt(src.maxOffersPerProduct, INPUT_DEFAULTS.maxOffersPerProduct, 1, 100, 'maxOffersPerProduct', warnings),
-        includeSellerDetails: bool(src.includeSellerDetails, INPUT_DEFAULTS.includeSellerDetails),
+        includeSellerDetails,
         maxProducts: clampInt(src.maxProducts, INPUT_DEFAULTS.maxProducts, 1, 1_000_000, 'maxProducts', warnings),
         maxSearchPages: clampInt(src.maxSearchPages, INPUT_DEFAULTS.maxSearchPages, 1, 20, 'maxSearchPages', warnings),
         maxVariants: clampInt(src.maxVariants, INPUT_DEFAULTS.maxVariants, 1, 500, 'maxVariants', warnings),

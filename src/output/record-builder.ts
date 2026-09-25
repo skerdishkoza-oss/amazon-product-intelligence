@@ -25,6 +25,7 @@ import type {
     QualityBlock,
     RankingsBlock,
     RatingsBlock,
+    RetrievalBlock,
     SellerProfilesBlock,
     VariantMode,
     VariantsBlock,
@@ -32,7 +33,7 @@ import type {
 import { SCHEMA_VERSION } from '../types/output.js';
 import { FIELD_STATUS, RECORD_STATUS, type FailureReason, type FieldStatus, type RecordStatus } from '../types/status.js';
 
-export const PARSER_VERSION = '2026-09-20.1';
+export const PARSER_VERSION = '2026-09-21.1';
 
 /** C1: ISO 8601 UTC with a Z suffix, taken at response receipt. */
 export function nowIso(): string {
@@ -160,6 +161,7 @@ export function emptyMonitoring(requested = false, previousDatasetId: string | n
         previousScrapedAt: null,
         changed: false,
         changes: [],
+        warnings: [],
         status: requested ? FIELD_STATUS.NOT_PRESENT : FIELD_STATUS.NOT_APPLICABLE,
     };
 }
@@ -201,6 +203,7 @@ export interface ProductRecordDraft {
     canonicalUrl?: string;
     title?: string | null;
     brand?: string | null;
+    retrieval?: RetrievalBlock;
     pricing?: PricingBlock;
     availability?: AvailabilityBlock;
     rankings?: RankingsBlock;
@@ -231,6 +234,11 @@ export function buildProductRecord(draft: ProductRecordDraft): ProductRecord {
         canonicalUrl: draft.canonicalUrl ?? canonicalProductUrl(draft.marketplace, draft.asin),
         title: draft.title ?? null,
         brand: draft.brand ?? null,
+        retrieval: draft.retrieval ?? {
+            profile: 'catalog',
+            requestedBlocks: ['pricing', 'availability', 'ratings', 'rankings', 'buyBox', 'variants', 'product', 'media'],
+            billingEvent: 'product-detail',
+        },
         pricing: draft.pricing ?? emptyPricing(),
         availability: draft.availability ?? emptyAvailability(),
         rankings: draft.rankings ?? emptyRankings(),

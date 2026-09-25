@@ -5,13 +5,15 @@
  * accounts for every input. That is only safe because the synthetic
  * per-dataset-item billing event is disabled (C7) -- see billing/events.ts.
  *
- * Dedupe happens here on marketplace + ASIN + resolved location (C3), and a
- * duplicate merges its discovery source into the record already held rather
- * than being emitted twice.
+ * Dedupe happens here on marketplace + ASIN + resolved location (C3). A
+ * product is appended as soon as it passes validation and dedupe so callers
+ * can safely charge only after `write()` resolves. Keeping successful rows in
+ * memory until the end of a run risks charging for results that are lost if
+ * the process exits before the final flush.
  */
 
 import { dedupeKey } from '../input/normalizer.js';
-import type { DatasetRecord, DiscoverySource, ProductRecord } from '../types/output.js';
+import type { DatasetRecord } from '../types/output.js';
 import { isProductRecord } from '../types/output.js';
 import { validateRecord } from '../quality/validation.js';
 
@@ -36,9 +38,7 @@ export class MemorySink implements DatasetSink {
 }
 
 export class DatasetWriter {
-    private readonly seen = new Map<string, ProductRecord>();
-    private readonly bufferedProducts: ProductRecord[] = [];
-    private flushedProducts = 0;
+    private readonly seen = new Set<string>();
     private duplicates = 0;
     private schemaViolations = 0;
 
@@ -49,8 +49,8 @@ export class DatasetWriter {
     ) {}
 
     /**
-     * Returns false when the record was merged into an existing one as a
-     * duplicate, so the caller can count it correctly.
+     * Resolves only after the sink has acknowledged the append. Returns false
+     * for a duplicate product, so callers can avoid charging twice.
      */
     async write(record: DatasetRecord): Promise<boolean> {
         const check = validateRecord(record);
@@ -66,54 +66,30 @@ export class DatasetWriter {
         if (isProductRecord(record)) {
             if (this.deduplicate) {
                 const key = dedupeKey(record.marketplace, record.asin, record.location.resolvedPostalCode);
-                const existing = this.seen.get(key);
-                if (existing) {
-                    this.mergeDiscovery(existing, record.discoveredFrom);
+                if (this.seen.has(key)) {
                     this.duplicates += 1;
                     return false;
                 }
-                this.seen.set(key, record);
+                // Reserve the key before awaiting the sink so concurrent
+                // writes cannot both append the same product.
+                this.seen.add(key);
+                try {
+                    await this.sink.pushData(record);
+                } catch (error) {
+                    // The append did not complete, so a retry must remain
+                    // possible and must not be treated as a duplicate.
+                    this.seen.delete(key);
+                    throw error;
+                }
+                return true;
             }
-            // Datasets are append-only. Buffer every product until the
-            // pipeline finishes. Besides preserving merged provenance, this
-            // lets the pipeline discard a value row when a concurrent PPE
-            // charge loses the race to the user's spending cap.
-            this.bufferedProducts.push(record);
+
+            await this.sink.pushData(record);
             return true;
         }
 
         await this.sink.pushData(record);
         return true;
-    }
-
-    /** Remove a staged product that was not successfully charged. */
-    discard(record: ProductRecord): boolean {
-        const index = this.bufferedProducts.indexOf(record, this.flushedProducts);
-        if (index < 0) return false;
-        this.bufferedProducts.splice(index, 1);
-        if (this.deduplicate) {
-            const key = dedupeKey(record.marketplace, record.asin, record.location.resolvedPostalCode);
-            if (this.seen.get(key) === record) this.seen.delete(key);
-        }
-        return true;
-    }
-
-    async flush(): Promise<void> {
-        while (this.flushedProducts < this.bufferedProducts.length) {
-            const record = this.bufferedProducts[this.flushedProducts];
-            if (record === undefined) break;
-            await this.sink.pushData(record);
-            this.flushedProducts += 1;
-        }
-    }
-
-    private mergeDiscovery(target: ProductRecord, sources: DiscoverySource[]): void {
-        for (const source of sources) {
-            const already = target.discoveredFrom.some(
-                (s) => s.type === source.type && s.value === source.value && s.page === source.page,
-            );
-            if (!already) target.discoveredFrom.push(source);
-        }
     }
 
     stats(): { duplicatesMerged: number; schemaViolations: number } {

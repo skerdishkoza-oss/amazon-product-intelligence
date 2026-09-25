@@ -24,36 +24,39 @@ function product(source: 'asin' | 'url') {
             applied: false,
             method: 'NONE',
         }),
-        discoveredFrom: [{ type: source, value: source }],
+        discoveredFrom: [{
+            type: source,
+            value: source === 'asin' ? 'B0CX23V2ZK' : 'https://www.amazon.com/dp/B0CX23V2ZK',
+        }],
     });
 }
 
-test('dedupe merges provenance before an append-only sink serializes the row', async () => {
+test('a product is durable when write resolves and a duplicate is not emitted', async () => {
     const sink = new SerializingSink();
     const writer = new DatasetWriter(sink, true);
 
     assert.equal(await writer.write(product('asin')), true);
+    assert.equal(sink.records.length, 1, 'the product is appended immediately');
     assert.equal(await writer.write(product('url')), false);
-    assert.equal(sink.records.length, 0, 'deduplicated products remain mutable until flush');
-
-    await writer.flush();
     assert.equal(sink.records.length, 1);
     const record = sink.records[0];
     assert.equal(record?.status, 'SUCCESS');
-    if (record?.status === 'SUCCESS') assert.equal(record.discoveredFrom.length, 2);
+    if (record?.status === 'SUCCESS') assert.deepEqual(record.discoveredFrom, [{ type: 'asin', value: 'B0CX23V2ZK' }]);
 });
 
-test('all product rows are staged and an uncharged row can be discarded', async () => {
-    const sink = new SerializingSink();
-    const writer = new DatasetWriter(sink, false);
-    const staged = product('asin');
+test('a failed append releases the dedupe key so the product can be retried', async () => {
+    let attempts = 0;
+    const sink: DatasetSink = {
+        async pushData(): Promise<void> {
+            attempts += 1;
+            if (attempts === 1) throw new Error('temporary dataset failure');
+        },
+    };
+    const writer = new DatasetWriter(sink, true);
 
-    assert.equal(await writer.write(staged), true);
-    assert.equal(sink.records.length, 0);
-    assert.equal(writer.discard(staged), true);
-
-    await writer.flush();
-    assert.equal(sink.records.length, 0, 'discarded value must never reach the append-only dataset');
+    await assert.rejects(writer.write(product('asin')), /temporary dataset failure/);
+    assert.equal(await writer.write(product('asin')), true);
+    assert.equal(attempts, 2);
 });
 
 test('the production writer rejects a schema-invalid value row', async () => {

@@ -8,7 +8,7 @@
 
 import { toMoney } from '../../types/money.js';
 import type { MarketplaceCode } from '../../types/output.js';
-import { extractFirstMoney, parseCount, parseRating } from '../number-parse.js';
+import { extractFirstMoney, parseBoughtInPastMonth, parseCount, parseRating } from '../number-parse.js';
 import type { MarketplaceConfig } from '../marketplace-config/types.js';
 import { clean, load, matchesLabel, type Dom } from './dom.js';
 
@@ -25,6 +25,7 @@ export interface SearchCard {
     sponsored: boolean;
     badge: string | null;
     boughtInPastMonthRaw: string | null;
+    boughtInPastMonthMin: number | null;
     deliveryText: string | null;
     position: number;
     organicPosition: number | null;
@@ -112,6 +113,7 @@ export function parseSearchPage(args: {
             sponsored: isSponsored,
             badge,
             boughtInPastMonthRaw: demand,
+            boughtInPastMonthMin: demand === null ? null : parseBoughtInPastMonth(demand, cfg),
             deliveryText: delivery,
             position: position + (args.page - 1) * 16,
             organicPosition: isSponsored ? null : organic,

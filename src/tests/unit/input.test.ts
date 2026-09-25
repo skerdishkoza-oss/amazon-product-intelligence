@@ -72,9 +72,61 @@ test('intelligence and monitoring inputs are validated explicitly', () => {
 
     const monitor = validateInput({ asins: ['B0CX23V2ZK'], mode: 'monitor', compareWithDatasetId: 'prior' });
     assert.equal(monitor.input.compareWithDatasetId, 'prior');
-    assert.equal(monitor.input.requestedSchemaVersion, '1.4');
+    assert.equal(monitor.input.requestedSchemaVersion, '1.5');
     assert.throws(
         () => validateInput({ asins: ['B0CX23V2ZK'], mode: 'fast', includeOffers: true }),
-        /fast mode cannot include offers/,
+        /fast mode cannot provide data blocks: offers/,
+    );
+});
+
+test('data profiles resolve to predictable blocks and legacy flags remain compatible', () => {
+    const essential = validateInput({ asins: ['B0CX23V2ZK'], dataProfile: 'essential' }).input;
+    assert.deepEqual(essential.dataBlocks, ['pricing', 'availability', 'ratings']);
+
+    const competitive = validateInput({ asins: ['B0CX23V2ZK'], dataProfile: 'competitive' }).input;
+    assert.equal(competitive.includeOffers, true);
+    assert.equal(competitive.includeSellerDetails, true);
+    assert.ok(competitive.dataBlocks.includes('offers'));
+    assert.ok(competitive.dataBlocks.includes('sellerProfiles'));
+
+    const legacy = validateInput({ asins: ['B0CX23V2ZK'], includeOffers: true }).input;
+    assert.ok(legacy.dataBlocks.includes('offers'));
+});
+
+test('custom profiles and discovery filters reject ambiguous configurations', () => {
+    assert.throws(
+        () => validateInput({ asins: ['B0CX23V2ZK'], dataProfile: 'custom' }),
+        /requires at least one dataBlocks/,
+    );
+    const custom = validateInput({
+        asins: ['B0CX23V2ZK'],
+        dataProfile: 'custom',
+        dataBlocks: ['pricing', 'media'],
+        discoveryFilters: {
+            minPrice: 20,
+            maxPrice: 50,
+            minRating: 4.5,
+            sponsoredPolicy: 'exclude',
+        },
+    }).input;
+    assert.deepEqual(custom.dataBlocks, ['pricing', 'media']);
+    assert.equal(custom.discoveryFilters.minRating, 4.5);
+    assert.equal(custom.discoveryFilters.sponsoredPolicy, 'exclude');
+    assert.throws(
+        () => validateInput({
+            asins: ['B0CX23V2ZK'],
+            discoveryFilters: { minPrice: 50, maxPrice: 20 },
+        }),
+        /minPrice cannot be greater/,
+    );
+});
+
+test('fast mode defaults to essential and refuses detail-only custom blocks', () => {
+    const fast = validateInput({ mode: 'fast', keywords: ['kettle'] }).input;
+    assert.equal(fast.dataProfile, 'essential');
+    assert.deepEqual(fast.dataBlocks, ['pricing', 'availability', 'ratings']);
+    assert.throws(
+        () => validateInput({ mode: 'fast', keywords: ['kettle'], dataProfile: 'custom', dataBlocks: ['product'] }),
+        /fast mode cannot provide data blocks/,
     );
 });

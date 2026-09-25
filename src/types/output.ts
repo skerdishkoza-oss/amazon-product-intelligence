@@ -1,5 +1,5 @@
 /**
- * Output schema v1.4. Spec sections 5.2, 5.4, 5.5, 6.x, 7, Appendix A and B.
+ * Output schema v1.5. Spec sections 5.2, 5.4, 5.5, 6.x, 7, Appendix A and B.
  *
  * Every block that can fail carries its own `status`. A null value without a
  * status is a bug, and the JSON-Schema golden test in quality/validation.ts
@@ -8,8 +8,9 @@
 
 import type { Money } from './money.js';
 import type { FailureReason, FieldStatus, RecordStatus } from './status.js';
+import type { DataBlock, DataProfile } from './input.js';
 
-export const SCHEMA_VERSION = '1.4';
+export const SCHEMA_VERSION = '1.5';
 
 export type MarketplaceCode = 'US' | 'UK' | 'DE' | 'FR' | 'IT' | 'ES' | 'CA';
 
@@ -27,6 +28,13 @@ export interface DiscoverySource {
     value: string;
     page?: number;
     position?: number;
+    /** Position within the source page, including sponsored results. */
+    pagePosition?: number;
+    sponsored?: boolean;
+    /** Position among organic results across every parsed page for this source. */
+    organicPosition?: number | null;
+    /** Position among sponsored results across every parsed page for this source. */
+    sponsoredPosition?: number | null;
 }
 
 /* ------------------------------------------------------------------ blocks */
@@ -253,6 +261,8 @@ export interface MonitoringBlock {
     previousScrapedAt: string | null;
     changed: boolean;
     changes: ProductChange[];
+    /** Machine-readable reasons why a comparison was unavailable or a block was suppressed. */
+    warnings: string[];
     status: FieldStatus;
 }
 
@@ -295,6 +305,14 @@ export interface QualityBlock {
     parserVersion: string;
 }
 
+export type ProductBillingEvent = 'product-basic' | 'product-essential' | 'product-detail' | 'product-check';
+
+export interface RetrievalBlock {
+    profile: DataProfile;
+    requestedBlocks: DataBlock[];
+    billingEvent: ProductBillingEvent;
+}
+
 /* ----------------------------------------------------------------- records */
 
 export interface ProductRecord {
@@ -309,6 +327,7 @@ export interface ProductRecord {
     canonicalUrl: string;
     title: string | null;
     brand: string | null;
+    retrieval: RetrievalBlock;
     pricing: PricingBlock;
     availability: AvailabilityBlock;
     rankings: RankingsBlock;

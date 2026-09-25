@@ -26,6 +26,7 @@ import { isBillable, type RecordStatus } from '../types/status.js';
 
 export const BILLING_EVENT = {
     PRODUCT_BASIC: 'product-basic',
+    PRODUCT_ESSENTIAL: 'product-essential',
     PRODUCT_DETAIL: 'product-detail',
     VARIANT_DETAIL: 'variant-detail',
     OFFER: 'offer',
@@ -116,6 +117,10 @@ export class BillingEvents {
 
     chargeProductBasic(status: RecordStatus): Promise<ChargeOutcome> {
         return this.chargeFor(BILLING_EVENT.PRODUCT_BASIC, status);
+    }
+
+    chargeProductEssential(status: RecordStatus): Promise<ChargeOutcome> {
+        return this.chargeFor(BILLING_EVENT.PRODUCT_ESSENTIAL, status);
     }
 
     chargeProductDetail(status: RecordStatus): Promise<ChargeOutcome> {

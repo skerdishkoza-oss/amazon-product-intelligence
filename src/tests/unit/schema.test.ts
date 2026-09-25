@@ -34,7 +34,7 @@ test('a minimal product record validates against the golden schema', () => {
         location: sampleLocation(),
     });
     assertValidRecord(record);
-    assert.equal(record.schemaVersion, '1.4');
+    assert.equal(record.schemaVersion, '1.5');
     assert.match(record.scrapedAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/, 'C1: scrapedAt is mandatory');
     assert.equal(record.canonicalUrl, 'https://www.amazon.com/dp/B0CX23V2ZK');
 });

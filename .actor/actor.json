@@ -2,8 +2,8 @@
     "actorSpecification": 1,
     "name": "amazon-product-intelligence",
     "title": "Amazon Product Scraper - Prices, Variants, Sellers & BSR",
-    "description": "Extract Amazon prices, variants, BSR, stock, Buy Box, sellers, discounts, ratings and product data with explicit source and status fields, so you know whether a value is truly absent or the scraper failed.",
-    "version": "1.4",
+    "description": "Filter Amazon discovery results before detail fetches, then choose Essential, Catalog, Competitive or Custom product intelligence. Includes prices, stock, BSR, variants, Buy Box, offers, sellers, verified location and explicit quality status.",
+    "version": "1.5",
     "buildTag": "latest",
     "meta": {
         "templateId": "ts-crawlee-cheerio"

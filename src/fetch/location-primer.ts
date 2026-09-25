@@ -28,13 +28,26 @@ export interface ApplyLocationArgs {
     headers: Record<string, string>;
 }
 
+export function buildLocationPayload(postalCode: string, country: string | null): Record<string, string> {
+    const payload: Record<string, string> = {
+        locationType: 'LOCATION_INPUT',
+        zipCode: postalCode,
+        storeContext: 'generic',
+        deviceType: 'web',
+        pageType: 'Detail',
+        actionSource: 'glow',
+    };
+    if (country !== null && country.trim() !== '') payload.countryCode = country.trim().toUpperCase();
+    return payload;
+}
+
 /**
  * Amazon's address-change endpoint needs an anti-CSRF token that is embedded in
  * the location modal. Fetch the modal, read the token, then post the postal
  * code. Two requests per session, amortized over every product on it.
  */
 export async function applyLocation(args: ApplyLocationArgs): Promise<boolean> {
-    const { cfg, postalCode, session, proxyUrl, timeoutSecs, headers } = args;
+    const { cfg, postalCode, country, session, proxyUrl, timeoutSecs, headers } = args;
     const base = `https://${cfg.host}`;
 
     try {
@@ -53,6 +66,8 @@ export async function applyLocation(args: ApplyLocationArgs): Promise<boolean> {
         const token = extractCsrfToken(typeof modal.body === 'string' ? modal.body : '');
         if (token === null) return false;
 
+        const locationPayload = buildLocationPayload(postalCode, country);
+
         const response = await gotScraping({
             url: `${base}${cfg.location.applyPath}`,
             method: 'POST',
@@ -64,14 +79,7 @@ export async function applyLocation(args: ApplyLocationArgs): Promise<boolean> {
                 accept: 'text/html,application/json,*/*',
                 'x-requested-with': 'XMLHttpRequest',
             },
-            body: new URLSearchParams({
-                locationType: 'LOCATION_INPUT',
-                zipCode: postalCode,
-                storeContext: 'generic',
-                deviceType: 'web',
-                pageType: 'Detail',
-                actionSource: 'glow',
-            }).toString(),
+            body: new URLSearchParams(locationPayload).toString(),
             sessionToken: session,
             cookieJar: session?.cookieJar as never,
             timeout: { request: timeoutSecs * 1000 },
@@ -101,8 +109,8 @@ export function extractCsrfToken(html: string): string | null {
 
 /**
  * Read the delivery indicator Amazon renders in the nav bar. Returns null when
- * the page has no indicator at all, which is different from "the indicator says
- * somewhere else" -- the caller keeps its previous belief in that case.
+ * the page has no indicator at all. The caller must treat that as unverified;
+ * a successful priming HTTP response is not enough evidence for a buyer price.
  */
 export function verifyLocation(html: string, expectedPostalCode: string): boolean | null {
     const $ = cheerio.load(html);

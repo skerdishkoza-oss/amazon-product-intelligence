@@ -1,7 +1,7 @@
 {
     "$schema": "http://json-schema.org/draft-07/schema#",
-    "$id": "https://apify.com/amazon-product-intelligence/schemas/record-1.4.json",
-    "title": "Amazon Product Intelligence dataset record v1.4",
+    "$id": "https://apify.com/amazon-product-intelligence/schemas/record-1.5.json",
+    "title": "Amazon Product Intelligence dataset record v1.5",
     "description": "Golden schema. Every record the Actor writes to a dataset validates against this or CI fails (spec 12.2).",
     "oneOf": [{ "$ref": "#/definitions/productRecord" }, { "$ref": "#/definitions/failureRecord" }],
     "definitions": {
@@ -139,6 +139,7 @@
                 "canonicalUrl",
                 "title",
                 "brand",
+                "retrieval",
                 "pricing",
                 "availability",
                 "rankings",
@@ -157,7 +158,7 @@
                 "deprecations"
             ],
             "properties": {
-                "schemaVersion": { "const": "1.4" },
+                "schemaVersion": { "const": "1.5" },
                 "status": { "const": "SUCCESS" },
                 "scrapedAt": { "$ref": "#/definitions/isoInstant" },
                 "input": { "$ref": "#/definitions/inputRef" },
@@ -167,6 +168,23 @@
                 "canonicalUrl": { "type": "string", "pattern": "^https://" },
                 "title": { "type": ["string", "null"] },
                 "brand": { "type": ["string", "null"] },
+                "retrieval": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["profile", "requestedBlocks", "billingEvent"],
+                    "properties": {
+                        "profile": { "type": "string", "enum": ["essential", "catalog", "competitive", "custom"] },
+                        "requestedBlocks": {
+                            "type": "array",
+                            "uniqueItems": true,
+                            "items": {
+                                "type": "string",
+                                "enum": ["pricing", "availability", "ratings", "rankings", "buyBox", "variants", "product", "media", "offers", "sellerProfiles"]
+                            }
+                        },
+                        "billingEvent": { "type": "string", "enum": ["product-basic", "product-essential", "product-detail", "product-check"] }
+                    }
+                },
                 "pricing": {
                     "type": "object",
                     "required": ["currentPrice", "listPrice", "priceSource", "status"],
@@ -309,7 +327,7 @@
                 "monitoring": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["requested", "compared", "previousDatasetId", "previousScrapedAt", "changed", "changes", "status"],
+                    "required": ["requested", "compared", "previousDatasetId", "previousScrapedAt", "changed", "changes", "warnings", "status"],
                     "properties": {
                         "requested": { "type": "boolean" },
                         "compared": { "type": "boolean" },
@@ -317,6 +335,7 @@
                         "previousScrapedAt": { "type": ["string", "null"] },
                         "changed": { "type": "boolean" },
                         "changes": { "type": "array", "items": { "$ref": "#/definitions/productChange" } },
+                        "warnings": { "type": "array", "items": { "type": "string" } },
                         "status": { "$ref": "#/definitions/fieldStatus" }
                     }
                 },
@@ -400,7 +419,7 @@
                 "chargedProductEvent"
             ],
             "properties": {
-                "schemaVersion": { "const": "1.4" },
+                "schemaVersion": { "const": "1.5" },
                 "status": {
                     "type": "string",
                     "enum": [

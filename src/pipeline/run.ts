@@ -16,12 +16,14 @@ import { parseOffers } from '../amazon/parsers/offers.js';
 import { parseSellerProfile, sellerProfileUrl } from '../amazon/parsers/seller.js';
 import { getMarketplace } from '../amazon/marketplace-config/index.js';
 import { canonicalProductUrl, classifyUrl, dedupeKey, locationKey, searchUrl } from '../input/normalizer.js';
+import { includesBlock, usesEssentialProductEvent } from '../input/profiles.js';
 import type { ValidatedInput } from '../input/validate.js';
 import type { FetchResult, Fetcher } from '../fetch/types.js';
 import { scoreCompleteness } from '../quality/completeness.js';
 import { compareProduct, historyKey } from '../history/compare.js';
 import { RunAccounting } from '../output/accounting.js';
 import { DatasetSchemaError, type DatasetWriter } from '../output/dataset-writer.js';
+import { projectRecordToBlocks } from '../output/profile-projector.js';
 import {
     buildFailureRecord,
     buildProductRecord,
@@ -37,7 +39,8 @@ import {
     qualityBlock,
 } from '../output/record-builder.js';
 import { FIELD_STATUS, FAILURE_REASON, RECORD_STATUS, type FailureReason } from '../types/status.js';
-import type { AvailabilityState, MarketplaceCode, OffersBlock, ProductRecord, SellerProfile, SellerProfilesBlock, VariantItem } from '../types/output.js';
+import type { AvailabilityState, MarketplaceCode, OffersBlock, ProductBillingEvent, ProductRecord, SellerProfile, SellerProfilesBlock, VariantItem } from '../types/output.js';
+import { matchDiscoveryCard } from './discovery-filter.js';
 import { WorkQueue, type WorkItem } from './queue.js';
 
 export interface RunDeps {
@@ -51,7 +54,7 @@ export interface RunDeps {
     maxConcurrency?: number;
     /** Injected in tests so the degraded-health path does not really sleep. */
     sleep?: (ms: number) => Promise<void>;
-    /** Prior SUCCESS rows indexed by marketplace + ASIN for monitor mode. */
+    /** Prior SUCCESS rows indexed by marketplace + ASIN + resolved location for monitor mode. */
     previousRecords?: Map<string, Record<string, unknown>>;
 }
 
@@ -60,6 +63,7 @@ export interface RunOutcome {
     discovered: number;
     searchPagesFetched: number;
     discoveryTruncated: boolean;
+    filteredOut: number;
     aborted: number;
     abortReason: FailureReason | null;
     peakConcurrency: number;
@@ -175,8 +179,12 @@ export async function runPipeline(deps: RunDeps): Promise<RunOutcome> {
 
     const queue = new WorkQueue();
     const planned = planInputs(validated);
+    let queuedProducts = 0;
     for (const item of planned) {
-        if (queue.push(item)) accounting.register(item.key);
+        if (queue.push(item)) {
+            accounting.register(item.key);
+            if (item.kind === 'PRODUCT' && item.invalidReason === undefined) queuedProducts += 1;
+        }
         else accounting.registerDuplicate();
     }
     accounting.registerRequested(
@@ -185,12 +193,20 @@ export async function runPipeline(deps: RunDeps): Promise<RunOutcome> {
 
     const mode = input.mode === 'monitor' ? 'detail' : input.mode;
     const scoringMode = mode === 'fast' ? 'fast' : mode === 'intelligence' ? 'intelligence' : 'detail';
+    const effectiveVariantMode = includesBlock(input.dataBlocks, 'variants') ? input.variantMode : 'none';
+    const detailBillingEvent: ProductBillingEvent = input.mode === 'monitor'
+        ? 'product-check'
+        : usesEssentialProductEvent(input.dataBlocks)
+            ? 'product-essential'
+            : 'product-detail';
+    const listingBillingEvent: ProductBillingEvent = 'product-basic';
 
     const state = {
         processed: 0,
         discovered: 0,
         searchPages: 0,
         discoveryTruncated: false,
+        filteredOut: 0,
         abortReason: null as FailureReason | null,
         peakConcurrency: 0,
         monitoringChecked: 0,
@@ -198,8 +214,21 @@ export async function runPipeline(deps: RunDeps): Promise<RunOutcome> {
         monitoringChanged: 0,
     };
     let discoveredSequence = 0;
+    let commitTail: Promise<void> = Promise.resolve();
     const fastDiscoveries = new Map<string, ProductRecord['discoveredFrom']>();
     const sellerProfileCache = new Map<string, Promise<SellerProfile | null>>();
+
+    async function withCommitLock<T>(work: () => Promise<T>): Promise<T> {
+        const previous = commitTail;
+        let release!: () => void;
+        commitTail = new Promise<void>((resolve) => { release = resolve; });
+        await previous;
+        try {
+            return await work();
+        } finally {
+            release();
+        }
+    }
 
     /** 9.5: the breaker lowers the live limit rather than killing the run outright. */
     const liveLimit = (): number => {
@@ -209,16 +238,15 @@ export async function runPipeline(deps: RunDeps): Promise<RunOutcome> {
         return ceilingConcurrency;
     };
 
-    const shouldStop = (): FailureReason | null => {
+    const shouldStop = (respectProductLimit = true): FailureReason | null => {
         if (state.abortReason !== null) return state.abortReason;
-        if (state.processed >= input.maxProducts) return FAILURE_REASON.MAX_PRODUCTS_REACHED;
+        if (respectProductLimit && state.processed >= input.maxProducts) return FAILURE_REASON.MAX_PRODUCTS_REACHED;
         if (billing.isCapReached()) return FAILURE_REASON.CHARGE_CAP_REACHED;
         if ((fetcher.healthState?.() ?? 'HEALTHY') === 'ABORT') return FAILURE_REASON.CIRCUIT_BREAKER_TRIPPED;
         return null;
     };
 
-    const capacityLeft = (): number => Math.max(0, input.maxProducts - state.processed - inFlightProducts);
-    let inFlightProducts = 0;
+    const capacityLeft = (): number => Math.max(0, input.maxProducts - state.processed - queuedProducts);
 
     /** Register-and-enqueue is one operation so discovery cannot escape accounting. */
     const enqueueDiscovered = (item: WorkItem): boolean => {
@@ -234,7 +262,10 @@ export async function runPipeline(deps: RunDeps): Promise<RunOutcome> {
         if (!input.deduplicate) item.key = `${item.key}|discovered:${discoveredSequence++}`;
         queue.push(item);
         accounting.register(item.key);
-        if (item.kind === 'PRODUCT') state.discovered += 1;
+        if (item.kind === 'PRODUCT') {
+            queuedProducts += 1;
+            state.discovered += 1;
+        }
         return true;
     };
 
@@ -251,8 +282,6 @@ export async function runPipeline(deps: RunDeps): Promise<RunOutcome> {
             accounting.settle(item.key, RECORD_STATUS.INVALID_INPUT);
             return;
         }
-
-        state.processed += 1;
 
         const fetched = await fetcher.fetch({
             url: item.url,
@@ -288,7 +317,7 @@ export async function runPipeline(deps: RunDeps): Promise<RunOutcome> {
             html: fetched.html,
             url: fetched.finalUrl,
             marketplace: item.marketplace,
-            variantMode: input.variantMode,
+            variantMode: effectiveVariantMode,
             maxVariants: input.maxVariants,
             pageType: fetched.pageType,
         });
@@ -311,7 +340,7 @@ export async function runPipeline(deps: RunDeps): Promise<RunOutcome> {
         }
 
         const warnings = [...parsed.warnings];
-        let variants = parsed.variants ?? emptyVariants(input.variantMode);
+        let variants = parsed.variants ?? emptyVariants(effectiveVariantMode);
         let offers = emptyOffers(input.includeOffers);
         let sellerProfiles = emptySellerProfiles(input.includeSellerDetails);
 
@@ -327,23 +356,33 @@ export async function runPipeline(deps: RunDeps): Promise<RunOutcome> {
         }
 
         // P1 brought forward: exact child price and stock, bounded by maxVariants.
-        if (input.variantMode === 'price' && variants.items.length > 0) {
+        if (effectiveVariantMode === 'price' && variants.items.length > 0) {
             const enriched = await enrichVariantPrices(item.marketplace, variants.items, warnings);
             variants = { ...variants, items: enriched };
         }
 
         // `full` mode promotes each child to its own fully-detailed record, so
         // each one is registered and charged as a product in its own right.
-        if (input.variantMode === 'full' && variants.items.length > 0) {
+        if (effectiveVariantMode === 'full' && variants.items.length > 0) {
             for (const child of variants.items) {
+                const variantDiscovery = { type: 'variant' as const, value: item.asin ?? '' };
+                if (child.asin === parsed.asin) {
+                    const discoveries = item.discoveries ?? (item.discoveries = []);
+                    if (!discoveries.some((source) => source.type === 'variant' && source.value === variantDiscovery.value)) {
+                        discoveries.push(variantDiscovery);
+                    }
+                    state.discovered += 1;
+                    accounting.registerDuplicate();
+                    continue;
+                }
                 enqueueDiscovered({
                     kind: 'PRODUCT',
-                    key: dedupeKey(item.marketplace, child.asin, input.postalCode),
+                    key: dedupeKey(item.marketplace, child.asin, fetched.resolvedPostalCode),
                     ref: { type: 'asin', value: child.asin },
                     marketplace: item.marketplace,
                     asin: child.asin,
                     url: canonicalProductUrl(item.marketplace, child.asin),
-                    discoveries: [{ type: 'variant', value: item.asin ?? '' }],
+                    discoveries: [variantDiscovery],
                     derived: true,
                 });
             }
@@ -356,6 +395,11 @@ export async function runPipeline(deps: RunDeps): Promise<RunOutcome> {
             parentAsin: parsed.parentAsin,
             title: parsed.title,
             brand: parsed.brand,
+            retrieval: {
+                profile: input.dataProfile,
+                requestedBlocks: [...input.dataBlocks],
+                billingEvent: detailBillingEvent,
+            },
             pricing: parsed.pricing,
             availability: parsed.availability,
             rankings: parsed.rankings,
@@ -393,10 +437,12 @@ export async function runPipeline(deps: RunDeps): Promise<RunOutcome> {
             scrapedAt: fetched.receivedAt,
         });
 
+        projectRecordToBlocks(record, input.dataBlocks);
+
         if (input.compareWithDatasetId !== null) {
             record.monitoring = compareProduct(
                 record,
-                deps.previousRecords?.get(historyKey(record.marketplace, record.asin)),
+                deps.previousRecords?.get(historyKey(record.marketplace, record.asin, record.location.resolvedPostalCode)),
                 input.compareWithDatasetId,
             );
         }
@@ -404,47 +450,13 @@ export async function runPipeline(deps: RunDeps): Promise<RunOutcome> {
         const committed = await finishRecord(
             item,
             record,
-            input.mode === 'monitor' ? 'check' : mode === 'fast' ? 'basic' : 'detail',
+            detailBillingEvent,
             scoringMode,
         );
-        if (committed && record.offers.items.length > 0) {
-            const outcome = await billing.chargeOffers(RECORD_STATUS.SUCCESS, record.offers.items.length);
-            if (outcome.chargedCount < record.offers.items.length) {
-                record.offers.items = record.offers.items.slice(0, outcome.chargedCount);
-                record.offers.truncated = true;
-                if (record.offers.items.length === 0) record.offers.status = FIELD_STATUS.NOT_APPLICABLE;
-                record.quality.warnings.push(`OFFERS_NOT_CHARGED:${outcome.reason ?? 'UNKNOWN'}`);
-            }
-        }
-        if (committed && record.sellerProfiles.items.length > 0) {
-            const chargedProfiles: SellerProfile[] = [];
-            for (const profile of record.sellerProfiles.items) {
-                const outcome = await billing.chargeSellerDetail(RECORD_STATUS.SUCCESS);
-                if (outcome.charged) chargedProfiles.push(profile);
-                else record.quality.warnings.push(`SELLER_DETAIL_NOT_CHARGED:${profile.sellerId}:${outcome.reason ?? 'UNKNOWN'}`);
-            }
-            record.sellerProfiles.items = chargedProfiles;
-            if (chargedProfiles.length === 0) record.sellerProfiles.status = FIELD_STATUS.NOT_APPLICABLE;
-        }
         if (committed && input.mode === 'monitor') {
             state.monitoringChecked += 1;
             if (record.monitoring.compared) state.monitoringCompared += 1;
             if (record.monitoring.changed) state.monitoringChanged += 1;
-        }
-        if (committed && input.variantMode === 'price') {
-            // The base product is charged first. Exact child data is revealed
-            // only for variant-detail events that the platform actually
-            // accepted; this prevents a charge cap from leaking unpaid value.
-            for (const child of record.variants.items) {
-                if (child.status !== FIELD_STATUS.EXTRACTED) continue;
-                const outcome = await billing.chargeVariantDetail(RECORD_STATUS.SUCCESS);
-                if (!outcome.charged) {
-                    child.price = null;
-                    child.availability = 'UNKNOWN';
-                    child.status = FIELD_STATUS.NOT_APPLICABLE;
-                    record.quality.warnings.push(`VARIANT_DETAIL_NOT_CHARGED:${child.asin}:${outcome.reason ?? 'UNKNOWN'}`);
-                }
-            }
         }
     }
 
@@ -565,6 +577,8 @@ export async function runPipeline(deps: RunDeps): Promise<RunOutcome> {
         let page = 1;
         let anyPageParsed = false;
         let totalCards = 0;
+        let organicSeen = 0;
+        let sponsoredSeen = 0;
         let lastFailure: FetchResult | null = null;
 
         while (page <= input.maxSearchPages) {
@@ -589,6 +603,22 @@ export async function runPipeline(deps: RunDeps): Promise<RunOutcome> {
                 break;
             }
 
+            if (input.requireLocation && !fetched.locationApplied) {
+                await writer.write(
+                    buildFailureRecord({
+                        status: RECORD_STATUS.REQUIRES_LOCATION,
+                        input: item.ref,
+                        marketplace: item.marketplace,
+                        attempts: fetched.attempts,
+                        reason: FAILURE_REASON.LOCATION_NOT_APPLIED,
+                        lastProxyTier: fetched.proxyTier,
+                        scrapedAt: fetched.receivedAt,
+                    }),
+                );
+                accounting.settle(item.key, RECORD_STATUS.REQUIRES_LOCATION);
+                return;
+            }
+
             const result = parseSearchPage({
                 html: fetched.html,
                 marketplace: item.marketplace,
@@ -596,14 +626,30 @@ export async function runPipeline(deps: RunDeps): Promise<RunOutcome> {
                 page,
             });
             anyPageParsed = true;
+            const cardsBeforePage = totalCards;
             totalCards += result.cards.length;
+            const organicBeforePage = organicSeen;
+            const sponsoredBeforePage = sponsoredSeen;
 
-            for (const card of result.cards) {
+            for (const [cardIndex, card] of result.cards.entries()) {
+                const filter = matchDiscoveryCard(card, input.discoveryFilters);
+                if (!filter.matches) {
+                    state.filteredOut += 1;
+                    continue;
+                }
                 const discovery = {
                     type: item.ref.type,
                     value: item.ref.value,
                     page,
-                    position: card.position,
+                    position: cardsBeforePage + cardIndex + 1,
+                    pagePosition: cardIndex + 1,
+                    sponsored: card.sponsored,
+                    organicPosition: card.sponsored || card.organicPosition === null
+                        ? null
+                        : organicBeforePage + card.organicPosition,
+                    sponsoredPosition: !card.sponsored || card.sponsoredPosition === null
+                        ? null
+                        : sponsoredBeforePage + card.sponsoredPosition,
                 };
 
                 if (mode === 'fast') {
@@ -652,6 +698,11 @@ export async function runPipeline(deps: RunDeps): Promise<RunOutcome> {
                         canonicalUrl: card.url,
                         title: card.title,
                         brand: null,
+                        retrieval: {
+                            profile: input.dataProfile,
+                            requestedBlocks: [...input.dataBlocks],
+                            billingEvent: listingBillingEvent,
+                        },
                         pricing: {
                             currentPrice: card.price,
                             listPrice: card.listPrice,
@@ -673,6 +724,7 @@ export async function runPipeline(deps: RunDeps): Promise<RunOutcome> {
                         rankings: {
                             ...emptyRankings(FIELD_STATUS.NOT_APPLICABLE),
                             boughtInPastMonthRaw: card.boughtInPastMonthRaw,
+                            boughtInPastMonthMin: card.boughtInPastMonthMin,
                         },
                         ratings: {
                             rating: card.rating,
@@ -708,13 +760,14 @@ export async function runPipeline(deps: RunDeps): Promise<RunOutcome> {
                         discoveredFrom: discoveries,
                         scrapedAt: fetched.receivedAt,
                     });
-                    await finishRecord({ ...item, key, asin: card.asin }, record, 'basic', scoringMode);
+                    projectRecordToBlocks(record, input.dataBlocks);
+                    await finishRecord({ ...item, key, asin: card.asin }, record, listingBillingEvent, scoringMode);
                     continue;
                 }
 
                 enqueueDiscovered({
                     kind: 'PRODUCT',
-                    key: dedupeKey(item.marketplace, card.asin, input.postalCode),
+                    key: dedupeKey(item.marketplace, card.asin, fetched.resolvedPostalCode),
                     ref: { type: 'asin', value: card.asin },
                     marketplace: item.marketplace,
                     asin: card.asin,
@@ -723,6 +776,9 @@ export async function runPipeline(deps: RunDeps): Promise<RunOutcome> {
                     derived: true,
                 });
             }
+
+            organicSeen += result.cards.filter((card) => !card.sponsored).length;
+            sponsoredSeen += result.cards.filter((card) => card.sponsored).length;
 
             if (!result.hasNextPage || result.cards.length === 0) break;
             page += 1;
@@ -779,55 +835,125 @@ export async function runPipeline(deps: RunDeps): Promise<RunOutcome> {
         accounting.settle(item.key, status);
     }
 
+    async function chargeAncillary(record: ProductRecord): Promise<void> {
+        if (record.offers.items.length > 0) {
+            const outcome = await billing.chargeOffers(RECORD_STATUS.SUCCESS, record.offers.items.length);
+            if (outcome.chargedCount < record.offers.items.length) {
+                log('offer billing stopped after the durable result was written', {
+                    asin: record.asin,
+                    charged: outcome.chargedCount,
+                    delivered: record.offers.items.length,
+                    reason: outcome.reason,
+                });
+                state.abortReason = outcome.reason === 'CAP_REACHED'
+                    ? FAILURE_REASON.CHARGE_CAP_REACHED
+                    : FAILURE_REASON.BILLING_FAILED;
+                return;
+            }
+        }
+        for (const profile of record.sellerProfiles.items) {
+            const outcome = await billing.chargeSellerDetail(RECORD_STATUS.SUCCESS);
+            if (!outcome.charged) {
+                log('seller-profile billing stopped after the durable result was written', {
+                    asin: record.asin,
+                    sellerId: profile.sellerId,
+                    reason: outcome.reason,
+                });
+                state.abortReason = outcome.reason === 'CAP_REACHED'
+                    ? FAILURE_REASON.CHARGE_CAP_REACHED
+                    : FAILURE_REASON.BILLING_FAILED;
+                return;
+            }
+        }
+        if (effectiveVariantMode !== 'price') return;
+        for (const child of record.variants.items) {
+            if (child.status !== FIELD_STATUS.EXTRACTED) continue;
+            const outcome = await billing.chargeVariantDetail(RECORD_STATUS.SUCCESS);
+            if (!outcome.charged) {
+                log('variant billing stopped after the durable result was written', {
+                    asin: record.asin,
+                    childAsin: child.asin,
+                    reason: outcome.reason,
+                });
+                state.abortReason = outcome.reason === 'CAP_REACHED'
+                    ? FAILURE_REASON.CHARGE_CAP_REACHED
+                    : FAILURE_REASON.BILLING_FAILED;
+                return;
+            }
+        }
+    }
+
     async function finishRecord(
         item: WorkItem,
         record: ProductRecord,
-        event: 'basic' | 'detail' | 'check',
+        event: ProductBillingEvent,
         scoring: 'fast' | 'detail' | 'intelligence',
     ): Promise<boolean> {
         const completeness = scoreCompleteness(record, scoring);
         record.quality.completenessScore = completeness.score;
         record.quality.criticalFieldsMissing = completeness.missing;
 
-        const emitted = await writer.write(record);
-        if (emitted) {
-            // Charge derives from the record's own status, never the caller's intent.
-            const outcome = event === 'basic'
-                ? await billing.chargeProductBasic(record.status)
-                : event === 'check'
-                    ? await billing.chargeProductCheck(record.status)
-                    : await billing.chargeProductDetail(record.status);
-            if (!outcome.charged) {
-                writer.discard(record);
-                const reason = outcome.reason === 'CAP_REACHED'
-                    ? FAILURE_REASON.CHARGE_CAP_REACHED
-                    : FAILURE_REASON.BILLING_FAILED;
-                state.abortReason = reason;
-                await writer.write(
-                    buildFailureRecord({
-                        status: RECORD_STATUS.RUN_ABORTED,
-                        input: item.ref,
-                        marketplace: item.marketplace,
-                        asin: item.asin,
-                        reason,
-                    }),
-                );
+        return withCommitLock(async () => {
+            const knownBillingStop = billing.isCapReached()
+                ? FAILURE_REASON.CHARGE_CAP_REACHED
+                : state.abortReason === FAILURE_REASON.BILLING_FAILED
+                    ? FAILURE_REASON.BILLING_FAILED
+                    : null;
+            if (knownBillingStop !== null) {
+                state.abortReason = knownBillingStop;
+                await writer.write(buildFailureRecord({
+                    status: RECORD_STATUS.RUN_ABORTED,
+                    input: item.ref,
+                    marketplace: item.marketplace,
+                    asin: item.asin,
+                    reason: knownBillingStop,
+                }));
                 accounting.settle(item.key, RECORD_STATUS.RUN_ABORTED);
                 return false;
             }
-        } else {
-            accounting.registerDuplicate();
-        }
-        accounting.settle(item.key, RECORD_STATUS.SUCCESS);
-        return emitted;
+
+            const emitted = await writer.write(record);
+            if (emitted) {
+                // The append is acknowledged before charging. Commits are
+                // serialized so a cap discovered by one worker stops every
+                // waiting worker before it can emit unpaid value.
+                const outcome = event === 'product-basic'
+                    ? await billing.chargeProductBasic(record.status)
+                    : event === 'product-essential'
+                        ? await billing.chargeProductEssential(record.status)
+                        : event === 'product-check'
+                            ? await billing.chargeProductCheck(record.status)
+                            : await billing.chargeProductDetail(record.status);
+                if (!outcome.charged) {
+                    const reason = outcome.reason === 'CAP_REACHED'
+                        ? FAILURE_REASON.CHARGE_CAP_REACHED
+                        : FAILURE_REASON.BILLING_FAILED;
+                    state.abortReason = reason;
+                    log('base billing failed after the durable result was written; stopping new work', {
+                        asin: record.asin,
+                        event,
+                        reason,
+                    });
+                    accounting.settle(item.key, RECORD_STATUS.SUCCESS);
+                    return false;
+                }
+                await chargeAncillary(record);
+            } else {
+                accounting.registerDuplicate();
+            }
+            accounting.settle(item.key, RECORD_STATUS.SUCCESS);
+            return emitted;
+        });
     }
 
     // ---- driver: bounded concurrency, dynamic limit, cooperative shutdown ----
 
     const inFlight = new Set<Promise<void>>();
+    let inFlightSearches = 0;
 
     while (true) {
-        const stop = shouldStop();
+        if (queue.length === 0 && inFlight.size === 0) break;
+        const stop = shouldStop(queue.length > 0);
         if (stop !== null) {
             state.abortReason = stop;
             break;
@@ -835,9 +961,21 @@ export async function runPipeline(deps: RunDeps): Promise<RunOutcome> {
 
         const limit = liveLimit();
         while (queue.length > 0 && inFlight.size < limit) {
+            // Finish all listing discovery before product records can be
+            // committed. This lets duplicate cards from concurrent keywords
+            // merge every source into one durable discoveredFrom array.
+            if (inFlightSearches > 0 && !queue.hasKind('SEARCH')) break;
+            if (state.processed >= input.maxProducts) {
+                state.abortReason = FAILURE_REASON.MAX_PRODUCTS_REACHED;
+                break;
+            }
             const item = queue.shift();
             if (item === undefined) break;
-            if (item.kind === 'PRODUCT' && item.invalidReason === undefined) inFlightProducts += 1;
+            if (item.kind === 'SEARCH') inFlightSearches += 1;
+            if (item.kind === 'PRODUCT' && item.invalidReason === undefined) {
+                queuedProducts -= 1;
+                state.processed += 1;
+            }
             const task = (async () => {
                 try {
                     if (item.kind === 'SEARCH') await handleSearch(item);
@@ -864,7 +1002,7 @@ export async function runPipeline(deps: RunDeps): Promise<RunOutcome> {
                     );
                     accounting.settle(item.key, status);
                 } finally {
-                    if (item.kind === 'PRODUCT' && item.invalidReason === undefined) inFlightProducts -= 1;
+                    if (item.kind === 'SEARCH') inFlightSearches -= 1;
                 }
             })();
             const tracked = task.finally(() => {
@@ -907,13 +1045,12 @@ export async function runPipeline(deps: RunDeps): Promise<RunOutcome> {
         accounting.settle(key, RECORD_STATUS.RUN_ABORTED);
     }
 
-    await writer.flush();
-
     return {
         processed: state.processed,
         discovered: state.discovered,
         searchPagesFetched: state.searchPages,
         discoveryTruncated: state.discoveryTruncated,
+        filteredOut: state.filteredOut,
         aborted: pending.length,
         abortReason: state.abortReason,
         peakConcurrency: state.peakConcurrency,

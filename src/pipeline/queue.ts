@@ -23,7 +23,7 @@ export interface WorkItem {
     url: string;
     /** Search keyword, when this item is a keyword rather than a URL. */
     keyword?: string | null;
-    /** All places this item came from. The array is shared with the buffered output record. */
+    /** All places this item came from. Sources are merged while the item is queued. */
     discoveries?: DiscoverySource[];
     /** Set when the item is unusable and must be emitted as INVALID_INPUT. */
     invalidReason?: FailureReason;
@@ -65,6 +65,10 @@ export class WorkQueue {
 
     has(key: string): boolean {
         return this.seen.has(key);
+    }
+
+    hasKind(kind: WorkKind): boolean {
+        return this.items.some((item) => item.kind === kind);
     }
 
     get length(): number {

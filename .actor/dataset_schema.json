@@ -10,7 +10,7 @@
                 "type": "string",
                 "title": "Schema version",
                 "description": "Version of the stable output contract.",
-                "example": "1.4"
+                "example": "1.5"
             },
             "status": {
                 "type": "string",
@@ -53,6 +53,11 @@
                 "type": "string",
                 "title": "Canonical URL",
                 "description": "Canonical marketplace product URL."
+            },
+            "retrieval": {
+                "type": "object",
+                "title": "Retrieval profile",
+                "description": "Selected profile, requested data blocks, and base billing event for this row."
             },
             "pricing": {
                 "type": "object",
@@ -139,6 +144,7 @@
                     "asin",
                     "title",
                     "brand",
+                    "retrieval",
                     "pricing",
                     "availability",
                     "rankings",

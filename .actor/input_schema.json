@@ -1,13 +1,13 @@
 {
     "title": "Amazon Product Intelligence Actor",
-    "description": "Give the Actor ASINs, product URLs or keywords. Every input you provide is accounted for in the output: either a product record or a structured failure row explaining exactly what happened.",
+    "description": "Give the Actor ASINs, product URLs or discovery inputs, choose the data depth, and filter search cards before detail fetches. Every input is accounted for as a product result or a structured failure row.",
     "type": "object",
     "schemaVersion": 1,
     "properties": {
         "mode": {
             "title": "Mode",
             "type": "string",
-            "description": "fast = listing data only. detail = full product page. intelligence = detail plus selected offers/sellers. monitor = compare current product state with a previous dataset.",
+            "description": "fast = listing data for discovery inputs; direct ASINs/URLs still require an Essential detail fetch. detail = product page. intelligence = detail plus selected competitive blocks. monitor = compare current product state with a previous dataset.",
             "editor": "select",
             "default": "detail",
             "enum": ["fast", "detail", "intelligence", "monitor"],
@@ -17,6 +17,31 @@
                 "Intelligence - offers and seller research",
                 "Monitor - compare with prior dataset"
             ]
+        },
+        "dataProfile": {
+            "title": "Data profile",
+            "type": "string",
+            "description": "Choose the result depth and base billing event. Essential returns price, availability and ratings with product-essential billing. Catalog adds BSR, Buy Box, variants, content and media with product-detail billing. Competitive also enables offers and seller profiles, which use their own events. Custom lets you choose individual blocks.",
+            "editor": "select",
+            "enum": ["essential", "catalog", "competitive", "custom"],
+            "enumTitles": [
+                "Essential - price, stock and ratings",
+                "Catalog - complete product intelligence",
+                "Competitive - catalog, offers and sellers",
+                "Custom - choose data blocks"
+            ],
+            "sectionCaption": "Data and pricing"
+        },
+        "dataBlocks": {
+            "title": "Custom data blocks",
+            "type": "array",
+            "description": "Used when Data profile is Custom. Identity, source, location and quality metadata are always returned. Offers and seller profiles have separate per-result billing events.",
+            "default": [],
+            "uniqueItems": true,
+            "items": {
+                "type": "string",
+                "enum": ["pricing", "availability", "ratings", "rankings", "buyBox", "variants", "product", "media", "offers", "sellerProfiles"]
+            }
         },
         "marketplace": {
             "title": "Marketplace",
@@ -56,6 +81,30 @@
             "description": "Search keywords. Each keyword is crawled up to 'Max search pages'.",
             "editor": "stringList",
             "default": []
+        },
+        "discoveryFilters": {
+            "title": "Search discovery filters",
+            "type": "object",
+            "description": "Filter keyword, category, best-seller and storefront cards before detail pages are queued or billed. Direct ASIN and product URL inputs bypass these filters. When a requested signal is missing from a card, the card is excluded rather than guessed.",
+            "editor": "json",
+            "default": {},
+            "additionalProperties": false,
+            "properties": {
+                "minPrice": { "title": "Minimum price", "type": "number", "minimum": 0 },
+                "maxPrice": { "title": "Maximum price", "type": "number", "minimum": 0 },
+                "minRating": { "title": "Minimum rating", "type": "number", "minimum": 0, "maximum": 5 },
+                "minReviewCount": { "title": "Minimum review count", "type": "integer", "minimum": 0 },
+                "primeOnly": { "title": "Prime only", "type": "boolean", "default": false },
+                "sponsoredPolicy": {
+                    "title": "Sponsored results",
+                    "type": "string",
+                    "enum": ["include", "exclude", "only"],
+                    "default": "include"
+                },
+                "minBoughtInPastMonth": { "title": "Minimum bought in past month", "type": "integer", "minimum": 0 },
+                "minDiscountPercent": { "title": "Minimum discount percent", "type": "number", "minimum": 0, "maximum": 100 }
+            },
+            "sectionCaption": "Discovery filters"
         },
         "items": {
             "title": "Raw JSON items",
@@ -217,7 +266,7 @@
             "type": "string",
             "description": "Echo of the output schema your integration expects. A mismatch produces a run warning, never a failure.",
             "editor": "textfield",
-            "default": "1.4",
+            "default": "1.5",
             "sectionCaption": "Advanced"
         },
         "compareWithDatasetId": {

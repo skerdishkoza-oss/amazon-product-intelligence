@@ -335,17 +335,15 @@ export class HttpFetcher implements Fetcher {
 
             // Verify the applied location from the page itself rather than
             // trusting the priming call (C12).
-            if (request.postalCode !== null) {
+            if (request.postalCode !== null && (request.label === 'PRODUCT' || request.label === 'SEARCH' || request.label === 'VARIANT')) {
                 const verified = verifyLocation(html, request.postalCode);
-                if (verified !== null) {
-                    locationApplied = verified;
-                    resolvedPostalCode = verified ? request.postalCode : null;
-                    if (!verified && session !== undefined) {
-                        const state = sessionState.get(session);
-                        if (state !== undefined) {
-                            state.primed = false;
-                            sessionState.set(session, state);
-                        }
+                locationApplied = verified === true;
+                resolvedPostalCode = locationApplied ? request.postalCode : null;
+                if (!locationApplied && session !== undefined) {
+                    const state = sessionState.get(session);
+                    if (state !== undefined) {
+                        state.primed = false;
+                        sessionState.set(session, state);
                     }
                 }
             }

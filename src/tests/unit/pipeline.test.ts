@@ -163,7 +163,107 @@ test('fast mode bills product-basic from listing data with no product fetch', as
     assert.equal(record.rankings.status, 'NOT_APPLICABLE', 'a search card has no BSR to miss');
     assert.equal(record.buyBox.status, 'NOT_APPLICABLE');
     assert.ok(record.quality.warnings.includes('FROM_SEARCH_CARD'));
+    assert.equal(record.retrieval.profile, 'essential');
+    assert.equal(record.retrieval.billingEvent, 'product-basic');
+    assert.deepEqual(record.discoveredFrom[0], {
+        type: 'keyword',
+        value: 'electric kettle',
+        page: 1,
+        position: 2,
+        pagePosition: 2,
+        sponsored: false,
+        organicPosition: 1,
+        sponsoredPosition: null,
+    });
     assert.equal(validateRecord(record).valid, true);
+});
+
+test('concurrent discovery inputs merge provenance before durable product writes', async () => {
+    const h = harness();
+    await run(
+        h,
+        { marketplace: 'US', keywords: ['electric kettle', 'travel kettle'], maxSearchPages: 1 },
+        new ScriptedFetcher(),
+        8,
+    );
+
+    assert.equal(products(h).length, 3);
+    assert.ok(products(h).every((record) => record.discoveredFrom.length === 2));
+    assert.deepEqual(
+        products(h)[0]?.discoveredFrom.map((source) => source.value).sort(),
+        ['electric kettle', 'travel kettle'],
+    );
+});
+
+test('essential profile emits only purchased blocks and bills product-essential', async () => {
+    const h = harness();
+    await run(h, { marketplace: 'US', asins: ['B0CX23V2ZK'], dataProfile: 'essential' }, new ScriptedFetcher());
+
+    const record = products(h)[0];
+    assert.ok(record);
+    assert.deepEqual(record.retrieval.requestedBlocks, ['pricing', 'availability', 'ratings']);
+    assert.equal(record.retrieval.billingEvent, 'product-essential');
+    assert.equal(record.pricing.status, 'EXTRACTED');
+    assert.equal(record.rankings.status, 'NOT_APPLICABLE');
+    assert.equal(record.buyBox.status, 'NOT_APPLICABLE');
+    assert.equal(record.product.status, 'NOT_APPLICABLE');
+    assert.deepEqual(h.billing.stats().byEvent, { 'product-essential': 1 });
+    assert.equal(validateRecord(record).valid, true);
+});
+
+test('fast mode direct ASIN uses the Essential event because it needs a detail fetch', async () => {
+    const h = harness();
+    const fetcher = new ScriptedFetcher();
+    await run(h, { mode: 'fast', marketplace: 'US', asins: ['B0CX23V2ZK'] }, fetcher);
+
+    assert.equal(fetcher.requests.filter((request) => request.label === 'PRODUCT').length, 1);
+    const record = products(h)[0];
+    assert.ok(record);
+    assert.equal(record.retrieval.billingEvent, 'product-essential');
+    assert.deepEqual(h.billing.stats().byEvent, { 'product-essential': 1 });
+});
+
+test('discovery filters prevent unwanted detail fetches and report the count', async () => {
+    const h = harness();
+    const fetcher = new ScriptedFetcher();
+    const outcome = await run(h, {
+        marketplace: 'US',
+        keywords: ['electric kettle'],
+        maxSearchPages: 1,
+        discoveryFilters: { sponsoredPolicy: 'exclude' },
+    }, fetcher);
+
+    assert.equal(outcome.filteredOut, 1);
+    assert.equal(outcome.discovered, 2);
+    assert.equal(fetcher.requests.filter((request) => request.label === 'PRODUCT').length, 2);
+});
+
+test('keyword discovery reserves maxProducts before queueing detail work', async () => {
+    const h = harness();
+    const fetcher = new ScriptedFetcher();
+    const outcome = await run(
+        h,
+        { marketplace: 'US', keywords: ['electric kettle'], maxSearchPages: 1, maxProducts: 1 },
+        fetcher,
+        8,
+    );
+
+    assert.equal(outcome.discovered, 1);
+    assert.equal(outcome.discoveryTruncated, true);
+    assert.equal(fetcher.requests.filter((request) => request.label === 'PRODUCT').length, 1);
+    assert.equal(products(h).length, 1);
+});
+
+test('fast mode enforces requireLocation before emitting listing prices', async () => {
+    const h = harness();
+    await run(
+        h,
+        { mode: 'fast', marketplace: 'US', keywords: ['electric kettle'], requireLocation: true },
+        new ScriptedFetcher(),
+    );
+    assert.equal(products(h).length, 0);
+    assert.equal(h.accounting.snapshot().requiresLocation, 1);
+    assert.equal(h.billing.stats().successfulPaidEvents, 0);
 });
 
 test('a blocked search page yields one BLOCKED row for the keyword', async () => {
@@ -229,7 +329,7 @@ test('intelligence mode emits bounded offers and public seller profiles with exa
     assert.equal(validateRecord(record).valid, true);
 });
 
-test('offer values past the charge cap are not leaked into the dataset', async () => {
+test('durable offer data is not lost when the cap stops ancillary billing', async () => {
     const h = harness(2);
     await run(h, {
         marketplace: 'US',
@@ -241,8 +341,8 @@ test('offer values past the charge cap are not leaked into the dataset', async (
 
     const record = products(h)[0];
     assert.ok(record);
-    assert.equal(record.offers.items.length, 1, 'one product event plus one offer fit under the cap');
-    assert.equal(record.offers.truncated, true);
+    assert.equal(record.offers.items.length, 2, 'the acknowledged dataset row remains complete');
+    assert.equal(record.offers.truncated, false, 'billing state does not rewrite an already acknowledged value row');
     assert.deepEqual(h.billing.stats().byEvent, { 'product-detail': 1, offer: 1 });
     assert.equal(validateRecord(record).valid, true);
 });
@@ -262,7 +362,7 @@ test('monitor mode compares prior state and bills every completed check', async 
         { marketplace: 'US', asins: ['B0CX23V2ZK'], mode: 'monitor', compareWithDatasetId: 'prior-dataset' },
         new ScriptedFetcher(),
         4,
-        new Map([['US|B0CX23V2ZK', previous]]),
+        new Map([['US|B0CX23V2ZK|default', previous]]),
     );
 
     const record = products(h)[0];
@@ -327,7 +427,7 @@ test('variant full mode promotes children to their own records', async () => {
     await run(h, { marketplace: 'US', asins: ['B0PARENT01'], variantMode: 'full', maxVariants: 2 }, fetcher);
 
     h.accounting.assertInvariant();
-    assert.equal(fetcher.requests.length, 3, 'the parent page plus one fetch per promoted child');
+    assert.equal(fetcher.requests.length, 2, 'the already-loaded canonical child is reused instead of fetched twice');
 
     // Amazon serves a variation parent as its default child, so this page's
     // canonical ASIN is B0CHILD001 -- the same product as the first promoted
@@ -337,7 +437,7 @@ test('variant full mode promotes children to their own records', async () => {
     assert.equal(products(h).length, 2);
     assert.equal(h.billing.stats().byEvent['product-detail'], 2, 'the merged duplicate is not charged');
     assert.equal(h.accounting.merged, 1);
-    assert.equal(h.accounting.snapshot().success, 3, 'all three inputs are still accounted for');
+    assert.equal(h.accounting.snapshot().success, 2, 'the already-loaded canonical child is merged before queueing');
 
     const merged = products(h).find((r) => r.asin === 'B0CHILD001');
     assert.equal(merged?.discoveredFrom.length, 2, 'both provenances are preserved on the surviving record');
@@ -358,6 +458,27 @@ test('maxProducts stops the run and flushes the remainder as RUN_ABORTED', async
     assert.equal(counts.success, 2);
     assert.equal(counts.runAborted, 2, 'the remainder appears, it does not vanish');
     assert.equal(h.accounting.accountedFor, 4);
+});
+
+test('maxProducts is a hard ceiling even when concurrency is higher', async () => {
+    const h = harness();
+    const fetcher = new ScriptedFetcher();
+    const outcome = await run(
+        h,
+        {
+            marketplace: 'US',
+            asins: ['B0A0000001', 'B0A0000002', 'B0A0000003', 'B0A0000004'],
+            maxProducts: 1,
+        },
+        fetcher,
+        8,
+    );
+
+    h.accounting.assertInvariant();
+    assert.equal(outcome.processed, 1);
+    assert.equal(fetcher.requests.filter((request) => request.label === 'PRODUCT').length, 1);
+    assert.equal(h.accounting.snapshot().success, 1);
+    assert.equal(h.accounting.snapshot().runAborted, 3);
 });
 
 test('the charge cap winds the run down and the summary still balances (C8)', async () => {
@@ -416,7 +537,7 @@ test('concurrent workers cannot emit products that lost the charge-cap race', as
     );
 });
 
-test('variant price mode charges the parent first and hides child details past the cap', async () => {
+test('variant price data stays durable when the cap stops ancillary billing', async () => {
     const h = harness(2);
     const fetcher = new ScriptedFetcher({
         script: { B0PARENT01: ok(F.US_VARIATION_PARENT, { finalUrl: 'https://www.amazon.com/dp/B0PARENT01' }) },
@@ -429,9 +550,9 @@ test('variant price mode charges the parent first and hides child details past t
     assert.equal(h.billing.stats().byEvent['product-detail'], 1);
     assert.equal(h.billing.stats().byEvent['variant-detail'], 1);
     assert.equal(record.variants.items[0]?.price?.amount, 24.99);
-    assert.equal(record.variants.items[1]?.price, null);
-    assert.equal(record.variants.items[1]?.status, 'NOT_APPLICABLE');
-    assert.equal(record.variants.items[2]?.price, null);
+    assert.equal(record.variants.items[1]?.price?.amount, 24.99);
+    assert.equal(record.variants.items[1]?.status, 'EXTRACTED');
+    assert.equal(record.variants.items[2]?.price?.amount, 24.99);
 });
 
 test('the circuit breaker trips on a block storm and still accounts for everything (9.5)', async () => {

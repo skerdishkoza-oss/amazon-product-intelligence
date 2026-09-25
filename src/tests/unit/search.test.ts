@@ -36,6 +36,7 @@ test('search: prices, ratings, badges and demand signals', () => {
     assert.equal(card.primeEligible, true);
     assert.equal(card.badge, 'Best Seller');
     assert.equal(card.boughtInPastMonthRaw, '2K+ bought in past month');
+    assert.equal(card.boughtInPastMonthMin, 2000);
     assert.ok(card.deliveryText?.includes('FREE delivery'));
     // Canonical form, not the tracking-laden relative href Amazon renders, so
     // the value is stable across runs and joins with the detail record.
