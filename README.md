@@ -1,49 +1,69 @@
-# Amazon Product Intelligence Actor
+## Amazon product data for research, monitoring, and competitive intelligence
 
-Extract Amazon prices, variants, BSR, stock, Buy Box, sellers, discounts, ratings and product data with explicit source and status fields, so you know whether a value is truly absent or the scraper failed.
+Turn Amazon ASINs, product URLs, keywords, categories, best-seller pages, and storefronts into structured product data you can use immediately.
 
-Implements the specification through **V1.5**, including selectable data profiles, pre-fetch discovery filters and hardened monitoring semantics. TypeScript, Apify SDK v3, `got-scraping` with Crawlee's session pool. Browser rendering is deliberately absent: everything is extracted from HTML and embedded JSON.
+Amazon Product Intelligence can collect **prices, stock, ratings, reviews, Best Sellers Rank, Buy Box data, variants, product content, images, offers, seller profiles, and location-aware changes** across seven Amazon marketplaces. Choose a lightweight mode for affordable discovery or request deeper product and competitor intelligence only when you need it.
 
-## Build state
+The Actor is designed for analysts, brands, agencies, sellers, developers, and automation teams that need reliable Amazon data without building and maintaining their own scraper.
 
-The P0 and P1 code paths are implemented and covered by offline fixtures. Public-release validation is still pending sanitized live captures across all seven marketplaces, the specification's 100-record manual audit, and confirmation of the pay-per-event configuration in Apify Console.
+## What you can do
 
-| Area | State |
-| --- | --- |
-| ASIN, product URL, keyword, category, best-seller, raw JSON and Apify Dataset inputs | Done |
-| US / UK / DE / FR / IT / ES / CA marketplaces, config-driven labels and number formats | Done |
-| Price, list price, discount, coupon, deal, unit price, Subscribe & Save | Done |
-| Availability and delivery, localized state mapping | Done |
-| BSR with source tracking, demand signal with localized magnitudes | Done |
-| Ratings, review counts, histogram | Done |
-| Buy Box with seller ID and AMZ/FBA/FBM classification | Done |
-| Variant discovery from the twister payload, zero extra requests | Done |
-| Variant `price` mode (per-child price and stock) and `full` mode | Done |
-| Product content, specifications, breadcrumb, media at full resolution | Done |
-| Search/listing extraction with organic vs sponsored positions | Done |
-| Composable search filters before detail fetches and product billing | Done |
-| Essential, Catalog, Competitive and Custom retrieval profiles | Done |
-| Seller/storefront discovery through listing surfaces | Done |
-| Bounded All Offers extraction: seller, condition, item/shipping/landed price, Prime, fulfillment | Done |
-| Public seller profiles: business fields, rating/feedback windows and legal identifiers when displayed | Done |
-| Location-specific prior-dataset monitoring with status-safe typed changes | Done |
-| HTTP fetcher: session pool, compression, retries, tier escalation budget | Done |
-| Delivery-location priming, once per session, verified from the page | Done |
-| Circuit breaker, dynamic concurrency, cooperative shutdown | Done |
-| Accounting invariant, structured failures, `RUN_ABORTED` settlement | Done |
-| Billing abstraction, SUCCESS-only charging, charge-cap wind-down | Done |
-| Golden JSON-Schema gate over every emitted record | Done |
-| Sales estimates | Not implemented; raw bought-in-past-month lower bounds are returned instead |
+- Track product prices, discounts, coupons, stock, and delivery information.
+- Discover products from Amazon searches, categories, best-seller pages, and storefronts.
+- Filter discovery results before opening product pages and spending more.
+- Analyze ratings, review counts, Best Sellers Rank, demand signals, and Buy Box ownership.
+- Find product variants and optionally fetch each child variant's price and availability.
+- Research competing offers, fulfillment type, sellers, and public seller information.
+- Compare a new run with an earlier dataset to identify meaningful product changes.
+- Export results to JSON, CSV, Excel, or another Apify integration.
+- Run manually, through the API, on a schedule, or as part of an automation.
 
-```
-npm ci
-npm test      # full offline suite; live-fixture test skips until captures exist
-npm start     # reads storage/key_value_stores/default/INPUT.json
-```
+## Choose the right mode
 
-## Input examples
+The Actor lets you match the data depth to your budget. You do not need to pay for full competitive intelligence when a listing-level result is enough.
 
-Full product detail with free variant discovery:
+| Mode and profile | Best for | Included data | Relative cost |
+| --- | --- | --- | --- |
+| **Fast** | Product discovery and large keyword lists | Listing price, availability signals, rating, review count, position, Prime and sponsored status | Lowest |
+| **Detail + Essential** | Price and stock collection | Product-page pricing, availability, delivery, ratings and reviews | Low detail tier |
+| **Detail + Catalog** | Complete product datasets | Essential data plus BSR, demand, Buy Box, variants, content, specifications and media | Standard |
+| **Intelligence + Competitive** | Competitor and seller research | Catalog data plus offers and public seller profiles | Highest depth |
+| **Custom** | Precise cost control | Only the blocks you select | Depends on selection |
+| **Monitor** | Recurring price and product tracking | Current detail data plus comparison with an earlier dataset | Per completed check |
+
+If you are unsure, start with **Detail + Catalog** for a complete product record. Use **Fast** for broad discovery, then run Detail or Intelligence only on the products worth deeper analysis.
+
+## How pricing works
+
+Amazon Product Intelligence uses pay-per-event pricing. The exact current prices are displayed in the **Pricing** section of the Actor page before you start a run.
+
+- Fast discovery uses the lower-priced `product-basic` event for each successful listing result.
+- Essential detail results use `product-essential`.
+- Catalog and other full product results use `product-detail`.
+- Monitoring uses `product-check` for each completed product check.
+- Deep variant requests use `variant-detail` for each successfully fetched child.
+- Competitive mode can add `offer` and `seller-detail` events for the extra results it delivers.
+- A failed, blocked, invalid, or not-found product is not charged as a successful product result.
+
+You can control spending with `maxProducts`, `maxSearchPages`, `maxVariants`, and `maxOffersPerProduct`. Apify also lets you set a **maximum charge per run**, so the Actor stops adding paid work when your chosen limit is reached.
+
+### How the modes reduce cost
+
+Fast mode can return product discovery data directly from Amazon listing pages without opening every detail page. Discovery filters run before detail requests, so excluded products do not generate product-detail events.
+
+Essential retrieves only the most frequently needed detail blocks. Catalog adds complete merchandising data. Competitive makes additional requests for offers and sellers, so it should be enabled only when those insights are valuable to you. Custom mode gives you the most precise control.
+
+For direct ASINs and product URLs, Fast mode still needs to open the product page because there is no listing card to reuse. Those inputs return an Essential result and use the Essential event.
+
+## Quick start
+
+1. Select the Amazon marketplace.
+2. Add ASINs, Amazon URLs, keywords, or an existing Apify dataset.
+3. Choose a mode and data profile.
+4. Set `maxProducts` and any filters or optional limits.
+5. Click **Start** and open the dataset when the run finishes.
+
+### Complete product example
 
 ```json
 {
@@ -57,7 +77,9 @@ Full product detail with free variant discovery:
 }
 ```
 
-Filter a search before paying for detail pages, then retrieve only the Essential blocks:
+### Affordable filtered discovery
+
+This example searches Amazon first, removes products that do not match, and fetches Essential data only for the remaining products.
 
 ```json
 {
@@ -79,7 +101,7 @@ Filter a search before paying for detail pages, then retrieve only the Essential
 }
 ```
 
-Offer and seller intelligence is opt-in through the Competitive profile:
+### Competitive intelligence example
 
 ```json
 {
@@ -92,130 +114,144 @@ Offer and seller intelligence is opt-in through the Competitive profile:
 }
 ```
 
-Custom profiles choose exact blocks while identity, retrieval, source, location and quality metadata remain stable:
+### Price monitoring example
+
+Run a Catalog dataset first, then use its dataset ID as the comparison baseline.
 
 ```json
 {
-  "marketplace": "UK",
-  "asins": ["B0CX23V2ZK"],
-  "dataProfile": "custom",
-  "dataBlocks": ["pricing", "availability", "buyBox", "offers"],
-  "maxOffersPerProduct": 5
-}
-```
-
-## Retrieval profiles and billing events
-
-If `dataProfile` is omitted, Fast mode uses Essential and other modes use Catalog. Blocks that were not purchased remain present in the stable output schema with `status: "NOT_APPLICABLE"`. Every success row includes `retrieval.profile`, `retrieval.requestedBlocks` and `retrieval.billingEvent`, so a buyer can reconcile output depth with usage.
-
-| Selection | Included base data | Base event |
-| --- | --- | --- |
-| Fast mode | Listing price, availability signals and ratings | `product-basic` |
-| Essential | Pricing, availability and ratings from the detail page | `product-essential` |
-| Catalog | Essential plus BSR/demand, Buy Box, variants, product content and media | `product-detail` |
-| Competitive | Catalog plus bounded offers and public seller profiles | `product-detail`, plus `offer` and `seller-detail` for ancillary results |
-| Custom | Exactly the selected blocks | `product-essential` when its base blocks are an Essential subset; otherwise `product-detail` |
-| Monitor mode | Selected detail blocks plus a prior-dataset comparison | `product-check` |
-
-`variantMode: price` adds `variant-detail` events for successfully extracted child values. The legacy `includeOffers` and `includeSellerDetails` inputs remain supported and add those blocks to the selected profile.
-
-Fast mode avoids product pages only for discovery inputs that already have listing cards. A direct ASIN or product URL has no listing card to reuse, so it performs an Essential detail fetch and uses `product-essential` rather than `product-basic`.
-
-Discovery filters apply only to keyword, category, best-seller and storefront cards. Direct ASINs and product URLs bypass them. Thresholds are inclusive. If a requested signal is missing on a listing card, that card is excluded rather than guessed. `RUN_SUMMARY.filteredOut` reports how many cards were excluded.
-
-Compare current state with a previous Actor dataset:
-
-```json
-{
-  "marketplace": "FR",
+  "marketplace": "US",
   "asins": ["B0CX23V2ZK"],
   "mode": "monitor",
+  "dataProfile": "catalog",
   "compareWithDatasetId": "PREVIOUS_DATASET_ID"
 }
 ```
 
-## Proxies
+## Filter products before detail collection
 
-On Apify, leave `proxyConfiguration.useApifyProxy` enabled and the platform supplies the proxy connection; do not commit proxy credentials. Detail, Intelligence and Monitor modes default to marketplace-pinned residential proxies so Amazon renders the correct localized catalogue and currency. Fast mode starts on the cheaper automatic tier and can move to a separate residential configuration after a verified block. Explicit proxy groups remain authoritative. Users may instead provide `proxyConfiguration.proxyUrls` to use their own proxy provider.
+Discovery filters work with keywords, category URLs, best-seller pages, and storefronts. You can combine:
 
-## What makes the output different
+- Minimum and maximum price
+- Minimum rating
+- Minimum review count
+- Prime-only products
+- Include, exclude, or keep only sponsored results
+- Minimum bought-in-past-month signal
+- Minimum discount percentage
 
-Two statuses, not one nullable field. `NOT_PRESENT` means the page loaded and Amazon did not show this. `PARSER_MISS` means it is probably there and we could not read it. Every block carries its own status, so a record with no BSR tells you which of those it was. The golden schema rejects a null with no status.
+When a requested signal is missing from a listing card, the product is excluded rather than guessed. The run summary reports how many products were filtered and why. Direct ASINs and direct product URLs bypass discovery filters.
 
-Every record carries `scrapedAt` and a `location` block. A US price from a session with no delivery location applied is not a reliable buyer price, so `location.applied` is reported per record and `requireLocation: true` turns an unlocated page into `REQUIRES_LOCATION` instead of a success.
+## Product variants
 
-Monitoring keys include marketplace, ASIN and resolved postal code. A New York observation therefore cannot become the baseline for a Los Angeles check. A comparison is suppressed, with a machine-readable warning, when either side has `PARSER_MISS`, `REQUIRES_LOCATION` or another untrusted block status.
+Choose the variant depth that matches your use case:
 
-Search provenance preserves absolute position, page position, organic position, sponsored position and the sponsored flag. This supports SEO and ad analysis without inferring one ranking from another.
+- `none`: Skip variants.
+- `discover`: Return child ASINs and option combinations from the parent page without extra child requests.
+- `price`: Fetch current price and availability for each selected child.
+- `full`: Produce full product records for selected child variants.
 
-Every input is accounted for. `uniqueInputs === success + every failure category`, asserted in code before the run summary is written. It holds when the product ceiling is hit, when the user's charge cap is reached, when the block-rate breaker trips, and when a worker throws.
+Use `maxVariants` to place a hard limit on deep child requests. Variant discovery is the best starting point because it does not need separate child-page requests.
 
-Nothing is charged for a failure. Billability derives from the record's own status inside `billing/events.ts`, so no caller can charge for a `BLOCKED` row, and adding a new failure status cannot accidentally make it billable.
+## Supported Amazon marketplaces
 
-Successful rows are schema-validated and acknowledged by the dataset before their billing event is attempted. Base commits are serialized, so once a charge cap is observed, waiting workers become explicit `RUN_ABORTED` rows instead of emitting additional value. An acknowledged result is never removed if the billing backend subsequently fails.
+| Marketplace | Domain | Currency |
+| --- | --- | --- |
+| United States | amazon.com | USD |
+| United Kingdom | amazon.co.uk | GBP |
+| Germany | amazon.de | EUR |
+| France | amazon.fr | EUR |
+| Italy | amazon.it | EUR |
+| Spain | amazon.es | EUR |
+| Canada | amazon.ca | CAD |
 
-## Large runs
+Reliable modes use marketplace-matched proxy locations so Amazon can return the appropriate catalog and currency. Product URLs from another supported marketplace are detected and reported correctly.
 
-`maxProducts` defaults to 1,000 and accepts larger bounded batches. The pipeline keeps at most eight fetches in flight, validates every row before it is written, and settles every requested or discovered item exactly once. A 1,000-product regression test verifies exact accounting, bounded concurrency and exact billing-event counts; the release soak test completed 50 live US Catalog products with zero blocked or aborted rows.
+## What the output contains
 
-For full-product runs near 1,000 items, give the Actor at least a two-hour timeout and 2 GB of memory. The published Actor defaults are configured that way. Large direct-ASIN lists can also arrive through `inputDatasetId`; discovery users can provide multiple keywords or listing URLs. Fast mode is the lower-cost choice when listing-card data is sufficient.
+Every successful product record includes identity, source, retrieval, location, and quality information. Depending on the selected profile, it can also contain:
 
-## Cost controls that are load-bearing
+- Current, list, unit, deal, coupon, and Subscribe & Save pricing
+- Stock state, delivery message, shipping information, and seller
+- Rating, review count, and rating histogram
+- Best Sellers Rank and bought-in-past-month lower bound
+- Buy Box seller, seller ID, and AMZ/FBA/FBM classification
+- Variant dimensions, child ASINs, prices, and availability
+- Bullets, specifications, breadcrumb, and product description
+- Full-resolution product images and video references
+- Offer condition, item price, shipping, landed price, Prime, and fulfillment
+- Public seller rating, feedback windows, business fields, and source URL
+- Monitoring changes such as price, discount, stock, rating, review count, Buy Box, and seller count
 
-- **Compression is mandatory.** Residential proxy is billed on wire bytes and Amazon HTML compresses about 4:1.
-- **Reliable full-product modes use residential proxies by default.** Detail, Intelligence and Monitor pin the exit country to the Amazon marketplace when residential use is allowed; Fast mode retains capped escalation from the cheaper automatic tier. `allowResidentialFallback: false` selects the cheapest path and accepts a higher block rate.
-- **The proxy tiers are separate configurations.** A blocked datacenter request can actually move to Apify's `RESIDENTIAL` group; the tier label is not just metadata.
-- **User-supplied proxies** in `proxyConfiguration.proxyUrls` keep that traffic on the customer's own provider account and off the platform bill.
-- **Not-found pages are never retried or escalated.** A dog page is an answer about the product, not a transport failure.
-- **`variantMode: discover` costs zero extra requests**, because the parent page's twister payload already contains the full child-ASIN-to-option matrix.
-- **Discovery filters run before product fetches**, so excluded listing cards consume neither detail-page proxy traffic nor product events.
-- **Zero-result filtered runs are explainable.** `RUN_SUMMARY.filteredOut` counts rejected cards and `RUN_SUMMARY.filterRejections` aggregates failed predicates such as `NOT_PRIME` or `REVIEW_COUNT_MISSING`. A card can fail multiple predicates, so reason counts can exceed the rejected-card count.
-- **`maxProducts` is reserved before concurrent work starts**, making the ceiling exact even when concurrency is higher than the limit.
+The output schema stays stable across profiles. Blocks you did not request use `NOT_APPLICABLE`, which means they were intentionally skipped to match your selected data depth. It does not mean the Actor failed.
 
-## Layout
+## Data quality you can understand
 
-```
-.actor/                 Store manifest, input UI schema, dataset schema/views
-scripts/
-  capture-fixture.mjs   Capture a sanitized real page into fixtures/real/
-src/
-  main.ts               Input, wiring, summary. No scraping logic.
-  pipeline/
-    run.ts              Run loop: driver, discovery, accounting contract
-    queue.ts            Work items; register-and-enqueue is one operation
-  history/compare.ts    Prior-dataset indexing and typed field changes
-  types/                status.ts (two enums), money.ts (minor units), output.ts
-  input/                validation, normalization and bounded Dataset ingestion
-  amazon/
-    marketplace-config/ seven locales: hosts, number formats, label dictionaries
-    number-parse.ts     locale-aware money, counts, ratings, demand
-    parsers/            price, availability, bsr, ratings, buybox, identity,
-                        content, media, variants, offers, seller, search, product
-  fetch/
-    http-fetcher.ts     sessions, tiers, budget, breaker, retries
-    location-primer.ts  postal-code priming and verification
-  quality/              completeness.ts, validation.ts (golden schema)
-  billing/              events.ts (guards), apify-backend.ts (platform adapter)
-  output/               accounting.ts, record-builder.ts, dataset-writer.ts, summary.ts
-  tests/
-    fixtures/pages.ts   Offline fixtures across the §12.1 matrix
-    unit/               parser, schema, billing, accounting and pipeline tests
-```
+Missing values are not all the same. Each data block reports a clear status:
 
-## Fixtures
+- `EXTRACTED`: The value was successfully collected.
+- `NOT_PRESENT`: The Amazon page loaded, but Amazon did not display the value.
+- `PARSER_MISS`: The page loaded, but the value could not be read reliably.
+- `NOT_APPLICABLE`: The block was not included in your selected profile.
+- `REQUIRES_LOCATION`: A required delivery location could not be verified.
 
-`src/tests/fixtures/pages.ts` reproduces the container IDs, class names and embedded-JSON shapes the parsers target, including localized price/availability vectors for all seven marketplaces and the product states in §12.1: in stock, out of stock, no Buy Box, coupon/deal, limited stock, variation parent (JSON and DOM-only), legacy layout, JSON-LD-only pricing, no BSR, unrecognized availability wording, offers, seller profiles, challenge page, dog page, stub page, and search pages.
+This distinction prevents a missing Amazon value from being confused with a scraping problem. Each row also contains quality warnings and a completeness score.
 
-These make CI runnable with no proxy spend, but they are not a substitute for real pages. Run `node scripts/capture-fixture.mjs B0CX23V2ZK US --proxy <url>` to capture a live page with session tokens, CSRF tokens and delivery addresses stripped. Captures land in `fixtures/real/` and `real-fixtures.test.ts` runs the full parser suite over each one, asserting no strategy throws and nothing session-bearing survived sanitization. That test skips cleanly when there are no captures.
+## Location-aware prices and monitoring
 
-Competitive blocks are opt-in because they add requests and billing events. `mode: monitor` requires `compareWithDatasetId`; each successful check is billed even when no field changed, because Amazon acquisition work still occurred. Every optional block reports whether it was requested, extracted, absent, missed, or omitted by profile.
+Amazon prices, availability, and delivery promises can change by destination. Add `postalCode` and `deliveryCountry` to request a location, and enable `requireLocation` when an unverified location should not count as a successful price observation.
 
-## Before publishing
+Monitoring baselines are separated by marketplace, ASIN, and resolved postal code. This prevents observations from different locations from being compared as if they represented the same buyer experience.
 
-Spec §8.4 is a hard gate. Most importantly: the synthetic `apify-default-dataset-item` billing event must be removed or zero-priced in the Actor's monetization settings. This Actor writes failure rows to the default dataset by design, and that event would bill customers for them. No code can prevent it; it is a console setting.
+## Reliability and large runs
 
-Configure `product-basic`, `product-essential`, `product-detail`, `product-check`, `variant-detail`, `offer` and `seller-detail` in Apify Console before launch. Prices remain a publication decision; the code selects events from delivered data depth, so prices can change without touching a parser.
+The Actor uses compressed requests, reusable sessions, bounded retries, proxy rotation, marketplace-specific residential routing, and a circuit breaker that reduces work during a block storm. Every input is accounted for as either a successful product or a structured failure row, so inputs do not silently disappear.
 
-Before Store publication, capture and commit sanitized live fixtures for US, UK, DE, FR, IT, ES and CA, run the fixed benchmark set, complete the 100-record manual audit, and confirm the pay-per-event names and prices in Apify Console. Do not market this build as fully validated until that gate passes.
+The pipeline is tested with 1,000-product batches and supports larger bounded input lists. For large ASIN lists, you can paste raw JSON items or select an existing Apify dataset. The Actor uses controlled concurrency to protect reliability and applies your product and spending limits before scheduling more work.
 
-For GitHub deployment, connect the repository as the Actor source in Apify Console and point it at `main`. Apify reads `.actor/actor.json`, builds the root `Dockerfile`, and exposes the declared input, output and dataset schemas. The same project can be deployed from a terminal with the official CLI after `apify auth login`, `apify validate-schema`, and `apify push`.
+Amazon can still change pages, remove products, display CAPTCHAs, or temporarily restrict access. When that happens, the Actor reports the reason instead of returning an apparently successful row full of empty values.
+
+## Common use cases
+
+- Amazon price and availability monitoring
+- Competitor catalog and assortment research
+- Buy Box and fulfillment analysis
+- Product, brand, and seller research
+- SEO rank and sponsored-position tracking
+- Discount and deal discovery
+- Variant and assortment mapping
+- Product content audits
+- Review and demand-signal analysis
+- Scheduled datasets for dashboards, alerts, and internal tools
+
+## FAQ
+
+### Can I use ASINs and URLs together?
+
+Yes. You can mix ASINs, product URLs, discovery URLs, keywords, and raw JSON items. Duplicate marketplace-ASIN-location combinations are merged by default.
+
+### Can I scrape more than 1,000 products?
+
+Yes. `maxProducts` defaults to 1,000 and can be increased. Large jobs take longer, so use reasonable page and variant limits and choose Fast or Essential when full Catalog data is unnecessary.
+
+### Why are some fields marked NOT_APPLICABLE?
+
+The field was intentionally excluded by your selected data profile. Choose Catalog, Competitive, or a Custom profile containing that block if you need it.
+
+### Does the Actor calculate estimated sales?
+
+The Actor returns Amazon's displayed bought-in-past-month signal as a lower bound when available. It does not invent sales estimates from unsupported assumptions.
+
+### Can I use my own proxies?
+
+Yes. Advanced users can provide external proxy URLs through `proxyConfiguration`. Otherwise, leave Apify Proxy enabled and the Actor manages the reliable defaults.
+
+### Can I automate recurring checks?
+
+Yes. Use Apify schedules, the API, webhooks, Make, Zapier, or another integration. Monitor mode can compare the current run with a previous dataset.
+
+## Support
+
+This Actor is actively maintained. If a result does not look right, open an issue from the Actor page and include the run ID, marketplace, and affected ASIN when possible. The developer will review it quickly and help you resolve the problem.
+
+Feature requests and custom Amazon data workflows are also welcome.
