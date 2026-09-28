@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { proxyCountryForMarketplace } from '../../fetch/proxy-country.js';
+import { proxyCountryForMarketplace, proxyCountryForPrimary } from '../../fetch/proxy-country.js';
 
 test('proxy country follows each supported marketplace', () => {
     assert.equal(proxyCountryForMarketplace('US'), 'US');
@@ -14,4 +14,11 @@ test('proxy country follows each supported marketplace', () => {
 
 test('explicit proxy country remains authoritative and is normalized', () => {
     assert.equal(proxyCountryForMarketplace('US', ' de '), 'DE');
+});
+
+test('primary proxy infers a country only for residential groups', () => {
+    assert.equal(proxyCountryForPrimary('UK', []), undefined);
+    assert.equal(proxyCountryForPrimary('DE', ['SHADER']), undefined);
+    assert.equal(proxyCountryForPrimary('UK', ['residential']), 'GB');
+    assert.equal(proxyCountryForPrimary('US', [], ' ca '), 'CA');
 });

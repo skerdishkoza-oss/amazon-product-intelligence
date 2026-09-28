@@ -19,3 +19,20 @@ export function proxyCountryForMarketplace(marketplace: MarketplaceCode, explici
     const normalized = explicitCountry?.trim().toUpperCase();
     return normalized && normalized.length > 0 ? normalized : MARKETPLACE_PROXY_COUNTRY[marketplace];
 }
+
+/**
+ * Automatic datacenter proxy groups do not necessarily have country-specific
+ * exits. Only apply an inferred country to a residential primary group; an
+ * explicit user choice is always preserved.
+ */
+export function proxyCountryForPrimary(
+    marketplace: MarketplaceCode,
+    groups: readonly string[],
+    explicitCountry?: string,
+): string | undefined {
+    const normalized = explicitCountry?.trim().toUpperCase();
+    if (normalized && normalized.length > 0) return normalized;
+    return groups.some((group) => group.toUpperCase() === 'RESIDENTIAL')
+        ? MARKETPLACE_PROXY_COUNTRY[marketplace]
+        : undefined;
+}

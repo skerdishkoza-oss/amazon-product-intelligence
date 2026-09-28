@@ -10,7 +10,7 @@ import { Actor, log, type ProxyConfiguration } from 'apify';
 import { ApifyChargingBackend } from './billing/apify-backend.js';
 import { BillingEvents, NoopChargingBackend } from './billing/events.js';
 import { FETCHER_DEFAULTS, HttpFetcher } from './fetch/http-fetcher.js';
-import { proxyCountryForMarketplace } from './fetch/proxy-country.js';
+import { proxyCountryForMarketplace, proxyCountryForPrimary } from './fetch/proxy-country.js';
 import { extractDatasetInputs } from './input/dataset-ingest.js';
 import { InputError, validateInput } from './input/validate.js';
 import { classifyUrl } from './input/normalizer.js';
@@ -137,6 +137,7 @@ const externalProxyUrls = input.proxyConfiguration?.proxyUrls ?? [];
 const useApifyProxy = externalProxyUrls.length === 0 && input.proxyConfiguration?.useApifyProxy !== false;
 const requestedProxyGroups = input.proxyConfiguration?.apifyProxyGroups ?? [];
 const requestedProxyCountry = input.proxyConfiguration?.apifyProxyCountry;
+const primaryUsesResidential = requestedProxyGroups.some((group) => group.toUpperCase() === 'RESIDENTIAL');
 const proxyConfigurationsByMarketplace = new Map<MarketplaceCode, ProxyConfiguration | null>();
 if (useApifyProxy) {
     for (const marketplace of runMarketplaces) {
@@ -144,13 +145,12 @@ if (useApifyProxy) {
             marketplace,
             (await Actor.createProxyConfiguration({
                 groups: requestedProxyGroups,
-                countryCode: proxyCountryForMarketplace(marketplace, requestedProxyCountry),
+                countryCode: proxyCountryForPrimary(marketplace, requestedProxyGroups, requestedProxyCountry),
             })) ?? null,
         );
     }
 }
 const proxyConfiguration = proxyConfigurationsByMarketplace.get(input.marketplace) ?? null;
-const primaryUsesResidential = requestedProxyGroups.some((group) => group.toUpperCase() === 'RESIDENTIAL');
 let residentialProxyConfiguration = null;
 const residentialProxyConfigurationsByMarketplace = new Map<MarketplaceCode, ProxyConfiguration | null>();
 if (useApifyProxy && input.allowResidentialFallback && !primaryUsesResidential) {
@@ -177,6 +177,7 @@ if (useApifyProxy && input.allowResidentialFallback && !primaryUsesResidential) 
 if (useApifyProxy) {
     log.info('proxy country routing', {
         explicitCountry: requestedProxyCountry ?? null,
+        primaryCountryTargeting: primaryUsesResidential || requestedProxyCountry !== undefined,
         marketplaces: Object.fromEntries(
             [...runMarketplaces].map((marketplace) => [
                 marketplace,
