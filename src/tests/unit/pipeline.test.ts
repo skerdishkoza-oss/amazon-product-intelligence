@@ -87,6 +87,29 @@ test('every input is accounted for and only successes are charged', async () => 
     }
 });
 
+test('a 1,000-product batch completes within bounded concurrency and exact accounting', async () => {
+    const h = harness();
+    const asins = Array.from({ length: 1_000 }, (_, index) => `B0${String(index).padStart(8, '0')}`);
+    const fetcher = new ScriptedFetcher();
+
+    const outcome = await run(
+        h,
+        { marketplace: 'US', asins, maxProducts: 1_000 },
+        fetcher,
+        8,
+    );
+
+    h.accounting.assertInvariant();
+    assert.equal(outcome.processed, 1_000);
+    assert.equal(products(h).length, 1_000);
+    assert.equal(fetcher.requests.filter((request) => request.label === 'PRODUCT').length, 1_000);
+    assert.equal(h.accounting.snapshot().success, 1_000);
+    assert.equal(h.accounting.accountedFor, 1_000);
+    assert.equal(h.billing.stats().successfulPaidEvents, 1_000);
+    assert.ok(outcome.peakConcurrency <= 8, `expected <= 8 concurrent, saw ${outcome.peakConcurrency}`);
+    assert.equal(outcome.abortReason, null);
+});
+
 test('a real product page produces a fully populated record', async () => {
     const h = harness();
     await run(h, { marketplace: 'US', asins: ['B0CX23V2ZK'], postalCode: '10001' }, new ScriptedFetcher());
