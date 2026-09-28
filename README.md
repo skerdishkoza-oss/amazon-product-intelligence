@@ -154,6 +154,12 @@ Nothing is charged for a failure. Billability derives from the record's own stat
 
 Successful rows are schema-validated and acknowledged by the dataset before their billing event is attempted. Base commits are serialized, so once a charge cap is observed, waiting workers become explicit `RUN_ABORTED` rows instead of emitting additional value. An acknowledged result is never removed if the billing backend subsequently fails.
 
+## Large runs
+
+`maxProducts` defaults to 1,000 and accepts larger bounded batches. The pipeline keeps at most eight fetches in flight, validates every row before it is written, and settles every requested or discovered item exactly once. A 1,000-product regression test verifies exact accounting, bounded concurrency and exact billing-event counts; the release soak test completed 50 live US Catalog products with zero blocked or aborted rows.
+
+For full-product runs near 1,000 items, give the Actor at least a two-hour timeout and 2 GB of memory. The published Actor defaults are configured that way. Large direct-ASIN lists can also arrive through `inputDatasetId`; discovery users can provide multiple keywords or listing URLs. Fast mode is the lower-cost choice when listing-card data is sufficient.
+
 ## Cost controls that are load-bearing
 
 - **Compression is mandatory.** Residential proxy is billed on wire bytes and Amazon HTML compresses about 4:1.
