@@ -7,7 +7,7 @@
         "mode": {
             "title": "Mode",
             "type": "string",
-            "description": "fast = listing data for discovery inputs; direct ASINs/URLs still require an Essential detail fetch. detail = product page. intelligence = detail plus selected competitive blocks. monitor = compare current product state with a previous dataset.",
+            "description": "fast = economical listing-card data; direct ASINs and product URLs are resolved through an exact-ASIN Amazon search without opening the product page. detail = product page. intelligence = detail plus selected competitive blocks. monitor = compare current product state with a previous dataset.",
             "editor": "select",
             "default": "detail",
             "enum": ["fast", "detail", "intelligence", "monitor"],
@@ -251,10 +251,16 @@
             "default": true
         },
         "allowResidentialFallback": {
-            "title": "Use residential reliability",
+            "title": "Use residential reliability for full product modes",
             "type": "boolean",
-            "description": "Detail, Intelligence and Monitor modes use marketplace-pinned residential proxies by default for reliable localized results. Fast mode starts on the cheaper automatic tier and can escalate after a verified block. Turn this off for the cheapest path with a higher block rate.",
+            "description": "Detail, Intelligence and Monitor modes use marketplace-pinned residential proxies by default for reliable localized results. Turn this off to try the cheaper automatic tier and accept a higher block rate.",
             "default": true
+        },
+        "fastResidentialFallback": {
+            "title": "Allow residential fallback in Fast mode",
+            "type": "boolean",
+            "description": "Off by default to protect the economy price. When enabled, a blocked Fast request may use a residential proxy on its single retry, improving recovery while increasing platform cost.",
+            "default": false
         },
         "proxyConfiguration": {
             "title": "Proxy configuration",

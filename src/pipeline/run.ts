@@ -103,6 +103,19 @@ export function planInputs(validated: ValidatedInput): WorkItem[] {
     const locKey = locationKey(input.postalCode);
 
     for (const asin of input.asins) {
+        if (input.mode === 'fast') {
+            push({
+                kind: 'SEARCH',
+                key: `${input.marketplace}|fast-lookup|${asin}|${locKey}`,
+                ref: { type: 'asin', value: asin },
+                marketplace: input.marketplace,
+                asin,
+                url: searchUrl(input.marketplace, asin, 1),
+                keyword: asin,
+                targetAsin: asin,
+            });
+            continue;
+        }
         push({
             kind: 'PRODUCT',
             key: `${input.marketplace}|${asin}|${locKey}`,
@@ -130,6 +143,20 @@ export function planInputs(validated: ValidatedInput): WorkItem[] {
         }
         const v = classified.value;
         if (v.asin !== null) {
+            if (input.mode === 'fast') {
+                push({
+                    kind: 'SEARCH',
+                    key: `${v.marketplace}|fast-lookup|${v.asin}|${locKey}`,
+                    ref: { type: 'url', value: raw },
+                    marketplace: v.marketplace,
+                    asin: v.asin,
+                    url: searchUrl(v.marketplace, v.asin, 1),
+                    keyword: v.asin,
+                    targetAsin: v.asin,
+                    discoveries: [{ type: 'url', value: raw }],
+                });
+                continue;
+            }
             push({
                 kind: 'PRODUCT',
                 key: dedupeKey(v.marketplace, v.asin, input.postalCode),
@@ -626,7 +653,8 @@ export async function runPipeline(deps: RunDeps): Promise<RunOutcome> {
         let sponsoredSeen = 0;
         let lastFailure: FetchResult | null = null;
 
-        while (page <= input.maxSearchPages) {
+        const pageLimit = item.targetAsin == null ? input.maxSearchPages : 1;
+        while (page <= pageLimit) {
             if (shouldStop() !== null) break;
 
             const url =
@@ -672,12 +700,20 @@ export async function runPipeline(deps: RunDeps): Promise<RunOutcome> {
             });
             anyPageParsed = true;
             const cardsBeforePage = totalCards;
-            totalCards += result.cards.length;
+            const pageCards = result.cards
+                .map((card, cardIndex) => ({ card, cardIndex }))
+                .filter(({ card }) => item.targetAsin == null || card.asin === item.targetAsin);
+            totalCards += pageCards.length;
             const organicBeforePage = organicSeen;
             const sponsoredBeforePage = sponsoredSeen;
 
-            for (const [cardIndex, card] of result.cards.entries()) {
-                const filter = matchDiscoveryCard(card, input.discoveryFilters);
+            for (const { card, cardIndex } of pageCards) {
+                // Direct ASINs and product URLs bypass discovery filters. Fast
+                // resolves them through an exact-ASIN search card so they can
+                // use the economical product-basic event without a detail page.
+                const filter = item.targetAsin == null
+                    ? matchDiscoveryCard(card, input.discoveryFilters)
+                    : { matches: true, reasons: [] as DiscoveryFilterReason[] };
                 if (!filter.matches) {
                     state.filteredOut += 1;
                     for (const reason of filter.reasons) {
@@ -828,7 +864,7 @@ export async function runPipeline(deps: RunDeps): Promise<RunOutcome> {
             organicSeen += result.cards.filter((card) => !card.sponsored).length;
             sponsoredSeen += result.cards.filter((card) => card.sponsored).length;
 
-            if (!result.hasNextPage || result.cards.length === 0) break;
+            if (item.targetAsin != null || !result.hasNextPage || result.cards.length === 0) break;
             page += 1;
         }
 
@@ -836,7 +872,9 @@ export async function runPipeline(deps: RunDeps): Promise<RunOutcome> {
             const failure = lastFailure !== null && !lastFailure.ok ? lastFailure : null;
             // A listing surface with genuinely no matches is a real answer, so
             // it reports PRODUCT_NOT_FOUND rather than a transport failure.
-            const status = failure?.notFound === true
+            const status = anyPageParsed && totalCards === 0
+                ? RECORD_STATUS.PRODUCT_NOT_FOUND
+                : failure?.notFound === true
                 ? RECORD_STATUS.PRODUCT_NOT_FOUND
                 : failure?.blocked === true
                     ? RECORD_STATUS.BLOCKED

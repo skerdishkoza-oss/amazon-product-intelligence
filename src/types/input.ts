@@ -73,6 +73,8 @@ export interface RawActorInput {
     maxRetries?: number;
     deduplicate?: boolean;
     allowResidentialFallback?: boolean;
+    /** Fast mode stays on the economical proxy tier unless this is explicitly enabled. */
+    fastResidentialFallback?: boolean;
     proxyConfiguration?: ProxyInput | null;
     compareWithDatasetId?: string | null;
     schemaVersion?: string;
@@ -104,6 +106,7 @@ export interface ActorInput {
     maxRetries: number;
     deduplicate: boolean;
     allowResidentialFallback: boolean;
+    fastResidentialFallback: boolean;
     proxyConfiguration: ProxyInput | null;
     compareWithDatasetId: string | null;
     /** What the caller said they expect; mismatch is a warning only. */
@@ -136,4 +139,5 @@ export const INPUT_DEFAULTS = {
     maxRetries: 3,
     deduplicate: true,
     allowResidentialFallback: true,
+    fastResidentialFallback: false,
 } as const;

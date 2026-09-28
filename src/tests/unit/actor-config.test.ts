@@ -9,7 +9,13 @@ test('Actor, input, output and dataset schemas are valid JSON with discoverable 
         readFile('.actor/output_schema.json', 'utf8'),
         readFile('.actor/dataset_schema.json', 'utf8'),
     ]);
-    const actor = JSON.parse(actorRaw) as { output?: unknown; storages?: { dataset?: unknown } };
+    const actor = JSON.parse(actorRaw) as {
+        output?: unknown;
+        storages?: { dataset?: unknown };
+        defaultMemoryMbytes?: unknown;
+        minMemoryMbytes?: unknown;
+        maxMemoryMbytes?: unknown;
+    };
     const input = JSON.parse(inputRaw) as { properties?: Record<string, unknown> };
     const output = JSON.parse(outputRaw) as { properties?: Record<string, unknown> };
     const dataset = JSON.parse(datasetRaw) as {
@@ -19,6 +25,9 @@ test('Actor, input, output and dataset schemas are valid JSON with discoverable 
 
     assert.equal(actor.storages?.dataset, './dataset_schema.json');
     assert.equal(actor.output, './output_schema.json');
+    assert.equal(actor.defaultMemoryMbytes, "get(input, 'mode', 'detail') == 'fast' ? 512 : 1024");
+    assert.equal(actor.minMemoryMbytes, 256);
+    assert.equal(actor.maxMemoryMbytes, 4096);
     assert.ok(input.properties?.datasetId);
     assert.ok(output.properties?.results);
     assert.ok(output.properties?.runSummary);

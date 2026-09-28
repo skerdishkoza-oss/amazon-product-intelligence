@@ -120,6 +120,7 @@ log.info('run configuration', {
     requireLocation: input.requireLocation,
     maxProducts: input.maxProducts,
     allowResidentialFallback: input.allowResidentialFallback,
+    fastResidentialFallback: input.fastResidentialFallback,
     includeOffers: input.includeOffers,
     includeSellerDetails: input.includeSellerDetails,
     compareWithDatasetId: input.compareWithDatasetId,
@@ -140,10 +141,16 @@ if (!isPaid) log.info('no charging configured for this run; billing events are r
 const externalProxyUrls = input.proxyConfiguration?.proxyUrls ?? [];
 const useApifyProxy = externalProxyUrls.length === 0 && input.proxyConfiguration?.useApifyProxy !== false;
 const configuredProxyGroups = input.proxyConfiguration?.apifyProxyGroups ?? [];
+// Fast is the price-leading lane. It stays on the economical automatic tier
+// unless the caller explicitly enables residential fallback (or selects a
+// residential group directly). Full product modes keep their reliable default.
+const effectiveResidentialFallback = input.mode === 'fast'
+    ? input.fastResidentialFallback
+    : input.allowResidentialFallback;
 const requestedProxyGroups = proxyGroupsForRun(
     configuredProxyGroups,
     input.mode,
-    input.allowResidentialFallback && useApifyProxy,
+    effectiveResidentialFallback && useApifyProxy,
 );
 const requestedProxyCountry = input.proxyConfiguration?.apifyProxyCountry;
 const defaultedResidentialPrimary = configuredProxyGroups.length === 0
@@ -164,7 +171,7 @@ if (useApifyProxy) {
 const proxyConfiguration = proxyConfigurationsByMarketplace.get(input.marketplace) ?? null;
 let residentialProxyConfiguration = null;
 const residentialProxyConfigurationsByMarketplace = new Map<MarketplaceCode, ProxyConfiguration | null>();
-if (useApifyProxy && input.allowResidentialFallback && !primaryUsesResidential) {
+if (useApifyProxy && effectiveResidentialFallback && !primaryUsesResidential) {
     for (const marketplace of runMarketplaces) {
         try {
             residentialProxyConfigurationsByMarketplace.set(
@@ -206,8 +213,10 @@ if (externalProxyUrls.length > 0) {
 }
 
 const fetcher = new HttpFetcher({
-    maxRetries: input.maxRetries,
-    allowResidentialFallback: input.allowResidentialFallback,
+    // One retry keeps Fast runs bounded: retry once on the economical tier, or
+    // use that second attempt for residential fallback when explicitly enabled.
+    maxRetries: input.mode === 'fast' ? Math.min(input.maxRetries, 1) : input.maxRetries,
+    allowResidentialFallback: effectiveResidentialFallback,
     residentialBudgetRatio: input.postalCode !== null
         || input.includeOffers
         || input.includeSellerDetails

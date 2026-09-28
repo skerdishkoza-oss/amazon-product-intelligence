@@ -1,3 +1,11 @@
+## 1.6 — 2026-09-28
+
+- Added a cost-protected Fast lane designed for a $0.0008 successful-result event ($0.80 per 1,000).
+- Changed Fast direct-ASIN and product-URL inputs to exact-ASIN search-card lookups, avoiding full product pages and expensive detail billing.
+- Disabled residential fallback in Fast mode by default, added an explicit opt-in switch, and capped Fast runs at one retry.
+- Added dynamic memory defaults: 512 MB for Fast and 1 GB for full product modes.
+- Corrected parsed zero-result searches to report a free `PRODUCT_NOT_FOUND` result instead of a transport failure.
+
 ## 1.5 — 2026-09-22
 
 - Pinned residential proxy exits to each requested Amazon marketplace, including mixed-marketplace runs, so rendered currencies and catalogues remain localized.

@@ -125,6 +125,11 @@ test('fast mode defaults to essential and refuses detail-only custom blocks', ()
     const fast = validateInput({ mode: 'fast', keywords: ['kettle'] }).input;
     assert.equal(fast.dataProfile, 'essential');
     assert.deepEqual(fast.dataBlocks, ['pricing', 'availability', 'ratings']);
+    assert.equal(fast.fastResidentialFallback, false);
+    assert.equal(
+        validateInput({ mode: 'fast', keywords: ['kettle'], fastResidentialFallback: true }).input.fastResidentialFallback,
+        true,
+    );
     assert.throws(
         () => validateInput({ mode: 'fast', keywords: ['kettle'], dataProfile: 'custom', dataBlocks: ['product'] }),
         /fast mode cannot provide data blocks/,

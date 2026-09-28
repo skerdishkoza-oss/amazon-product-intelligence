@@ -315,6 +315,7 @@ export function validateInput(raw: RawActorInput | null | undefined): ValidatedI
         maxRetries: clampInt(src.maxRetries, INPUT_DEFAULTS.maxRetries, 0, 10, 'maxRetries', warnings),
         deduplicate: bool(src.deduplicate, INPUT_DEFAULTS.deduplicate),
         allowResidentialFallback: bool(src.allowResidentialFallback, INPUT_DEFAULTS.allowResidentialFallback),
+        fastResidentialFallback: bool(src.fastResidentialFallback, INPUT_DEFAULTS.fastResidentialFallback),
         proxyConfiguration: src.proxyConfiguration ?? null,
         compareWithDatasetId,
         requestedSchemaVersion,

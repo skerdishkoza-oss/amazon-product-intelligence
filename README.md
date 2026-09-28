@@ -24,7 +24,7 @@ The Actor lets you match the data depth to your budget. You do not need to pay f
 
 | Mode and profile | Best for | Included data | Relative cost |
 | --- | --- | --- | --- |
-| **Fast** | Product discovery and large keyword lists | Listing price, availability signals, rating, review count, position, Prime and sponsored status | Lowest |
+| **Fast** | Low-cost discovery and exact ASIN lookups | Listing price, availability signals, rating, review count, position, Prime and sponsored status | **$0.80 / 1,000 successful results** |
 | **Detail + Essential** | Price and stock collection | Product-page pricing, availability, delivery, ratings and reviews | Low detail tier |
 | **Detail + Catalog** | Complete product datasets | Essential data plus BSR, demand, Buy Box, variants, content, specifications and media | Standard |
 | **Intelligence + Competitive** | Competitor and seller research | Catalog data plus offers and public seller profiles | Highest depth |
@@ -36,6 +36,8 @@ If you are unsure, start with **Detail + Catalog** for a complete product record
 ## How pricing works
 
 Amazon Product Intelligence uses pay-per-event pricing. The exact current prices are displayed in the **Pricing** section of the Actor page before you start a run.
+
+**Fast launches at $0.0008 per successful listing result — $0.80 per 1,000.** It is the price-leading option for product discovery, large keyword lists, and lightweight ASIN checks. Blocked, missing, and invalid inputs do not generate a successful-product charge.
 
 - Fast discovery uses the lower-priced `product-basic` event for each successful listing result.
 - Essential detail results use `product-essential`.
@@ -49,11 +51,11 @@ You can control spending with `maxProducts`, `maxSearchPages`, `maxVariants`, an
 
 ### How the modes reduce cost
 
-Fast mode can return product discovery data directly from Amazon listing pages without opening every detail page. Discovery filters run before detail requests, so excluded products do not generate product-detail events.
+Fast mode returns product discovery data directly from Amazon listing pages without opening detail pages. One keyword page can produce many billable results, which is what makes the $0.80-per-1,000 tier sustainable. It uses 512 MB by default, caps retries, and stays on the economical automatic proxy tier unless you explicitly enable `fastResidentialFallback`.
 
 Essential retrieves only the most frequently needed detail blocks. Catalog adds complete merchandising data. Competitive makes additional requests for offers and sellers, so it should be enabled only when those insights are valuable to you. Custom mode gives you the most precise control.
 
-For direct ASINs and product URLs, Fast mode still needs to open the product page because there is no listing card to reuse. Those inputs return an Essential result and use the Essential event.
+For direct ASINs and product URLs, Fast mode searches Amazon for the exact ASIN and returns only the matching listing card. It still uses the `product-basic` event and never silently upgrades the request to a more expensive detail event. Choose Essential or Catalog when you need product-page fields.
 
 ## Quick start
 
@@ -205,9 +207,9 @@ Monitoring baselines are separated by marketplace, ASIN, and resolved postal cod
 
 ## Reliability and large runs
 
-The Actor uses compressed requests, reusable sessions, bounded retries, proxy rotation, marketplace-specific residential routing, and a circuit breaker that reduces work during a block storm. Every input is accounted for as either a successful product or a structured failure row, so inputs do not silently disappear.
+The Actor uses compressed requests, reusable sessions, bounded retries, proxy rotation, marketplace-specific residential routing for full product modes, and a circuit breaker that reduces work during a block storm. Fast mode has a separate cost-protected network path; enable its optional residential fallback only when the cheaper path is being blocked. Every input is accounted for as either a successful product or a structured failure row, so inputs do not silently disappear.
 
-The pipeline is tested with 1,000-product batches and supports larger bounded input lists. For large ASIN lists, you can paste raw JSON items or select an existing Apify dataset. The Actor uses controlled concurrency to protect reliability and applies your product and spending limits before scheduling more work.
+The pipeline is tested with 1,000-product batches and supports larger bounded input lists. For large ASIN lists, you can paste raw JSON items or select an existing Apify dataset. The Actor uses controlled concurrency, selects 512 MB for Fast runs and 1 GB for full product runs by default, and applies your product and spending limits before scheduling more work.
 
 Amazon can still change pages, remove products, display CAPTCHAs, or temporarily restrict access. When that happens, the Actor reports the reason instead of returning an apparently successful row full of empty values.
 

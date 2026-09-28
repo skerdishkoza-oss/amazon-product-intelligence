@@ -23,6 +23,8 @@ export interface WorkItem {
     url: string;
     /** Search keyword, when this item is a keyword rather than a URL. */
     keyword?: string | null;
+    /** Exact ASIN requested through Fast mode's economical search-card lookup. */
+    targetAsin?: string | null;
     /** All places this item came from. Sources are merged while the item is queued. */
     discoveries?: DiscoverySource[];
     /** Set when the item is unusable and must be emitted as INVALID_INPUT. */

@@ -234,16 +234,30 @@ test('essential profile emits only purchased blocks and bills product-essential'
     assert.equal(validateRecord(record).valid, true);
 });
 
-test('fast mode direct ASIN uses the Essential event because it needs a detail fetch', async () => {
+test('fast mode direct ASIN uses an exact search-card lookup and product-basic billing', async () => {
     const h = harness();
     const fetcher = new ScriptedFetcher();
     await run(h, { mode: 'fast', marketplace: 'US', asins: ['B0CX23V2ZK'] }, fetcher);
 
-    assert.equal(fetcher.requests.filter((request) => request.label === 'PRODUCT').length, 1);
+    assert.equal(fetcher.requests.filter((request) => request.label === 'PRODUCT').length, 0);
+    assert.equal(fetcher.requests.filter((request) => request.label === 'SEARCH').length, 1);
     const record = products(h)[0];
     assert.ok(record);
-    assert.equal(record.retrieval.billingEvent, 'product-essential');
-    assert.deepEqual(h.billing.stats().byEvent, { 'product-essential': 1 });
+    assert.equal(record.asin, 'B0CX23V2ZK');
+    assert.equal(record.retrieval.billingEvent, 'product-basic');
+    assert.equal(record.pricing.priceSource, 'SEARCH_CARD');
+    assert.deepEqual(h.billing.stats().byEvent, { 'product-basic': 1 });
+});
+
+test('fast exact-ASIN lookup returns a free not-found row when Amazon has no matching card', async () => {
+    const h = harness();
+    const fetcher = new ScriptedFetcher();
+    await run(h, { mode: 'fast', marketplace: 'US', asins: ['B0MISSING1'] }, fetcher);
+
+    h.accounting.assertInvariant();
+    assert.equal(products(h).length, 0);
+    assert.equal(h.accounting.snapshot().productNotFound, 1);
+    assert.equal(h.billing.stats().successfulPaidEvents, 0);
 });
 
 test('discovery filters prevent unwanted detail fetches and report the count', async () => {
@@ -710,9 +724,7 @@ test('a worker throwing still settles its input', async () => {
     assert.equal(h.accounting.snapshot().fetchFailed, 2, 'an unexpected throw cannot lose an input');
 });
 
-test('a search page that parses but yields no cards is not a successful keyword', async () => {
-    // Regression: a stub listing page settled the keyword as SUCCESS, silently
-    // reporting "no products" for what was actually a blocked response.
+test('a genuine no-results search is reported as PRODUCT_NOT_FOUND without billing', async () => {
     const h = harness();
     await run(
         h,
@@ -721,8 +733,9 @@ test('a search page that parses but yields no cards is not a successful keyword'
     );
     h.accounting.assertInvariant();
     assert.equal(h.accounting.snapshot().success, 0);
-    assert.equal(h.accounting.snapshot().fetchFailed, 1);
+    assert.equal(h.accounting.snapshot().productNotFound, 1);
+    assert.equal(h.billing.stats().successfulPaidEvents, 0);
     const row = h.sink.records[0];
-    assert.equal(row?.status, 'FETCH_FAILED');
+    assert.equal(row?.status, 'PRODUCT_NOT_FOUND');
     assert.equal((row as { reason?: string }).reason, 'EMPTY_TEMPLATE');
 });

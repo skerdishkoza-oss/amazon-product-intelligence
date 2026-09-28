@@ -2,12 +2,15 @@
     "actorSpecification": 1,
     "name": "amazon-product-intelligence",
     "title": "Amazon Product Scraper - Prices, Variants, Sellers & BSR",
-    "description": "Filter Amazon discovery results before detail fetches, then choose Essential, Catalog, Competitive or Custom product intelligence. Includes prices, stock, BSR, variants, Buy Box, offers, sellers, verified location and explicit quality status.",
-    "version": "1.5",
+    "description": "Amazon discovery from $0.80 per 1,000 successful Fast results, plus selectable Essential, Catalog, Competitive and monitoring depth. Includes prices, stock, BSR, variants, Buy Box, offers, sellers, location and explicit quality status.",
+    "version": "1.6",
     "buildTag": "latest",
     "meta": {
         "templateId": "ts-crawlee-cheerio"
     },
+    "defaultMemoryMbytes": "get(input, 'mode', 'detail') == 'fast' ? 512 : 1024",
+    "minMemoryMbytes": 256,
+    "maxMemoryMbytes": 4096,
     "input": "./input_schema.json",
     "output": "./output_schema.json",
     "dockerfile": "../Dockerfile",
