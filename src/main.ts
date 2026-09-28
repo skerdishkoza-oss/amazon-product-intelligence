@@ -6,10 +6,11 @@
  * the summary. No scraping logic lives here.
  */
 
-import { Actor, log } from 'apify';
+import { Actor, log, type ProxyConfiguration } from 'apify';
 import { ApifyChargingBackend } from './billing/apify-backend.js';
 import { BillingEvents, NoopChargingBackend } from './billing/events.js';
 import { FETCHER_DEFAULTS, HttpFetcher } from './fetch/http-fetcher.js';
+import { proxyCountryForMarketplace } from './fetch/proxy-country.js';
 import { extractDatasetInputs } from './input/dataset-ingest.js';
 import { InputError, validateInput } from './input/validate.js';
 import { classifyUrl } from './input/normalizer.js';
@@ -20,6 +21,7 @@ import { runPipeline } from './pipeline/run.js';
 import { historyKey } from './history/compare.js';
 import type { RawActorInput } from './types/input.js';
 import type { DatasetRecord } from './types/output.js';
+import type { MarketplaceCode } from './types/output.js';
 
 await Actor.init();
 
@@ -134,25 +136,54 @@ if (!isPaid) log.info('no charging configured for this run; billing events are r
 const externalProxyUrls = input.proxyConfiguration?.proxyUrls ?? [];
 const useApifyProxy = externalProxyUrls.length === 0 && input.proxyConfiguration?.useApifyProxy !== false;
 const requestedProxyGroups = input.proxyConfiguration?.apifyProxyGroups ?? [];
-const proxyConfiguration = useApifyProxy
-    ? ((await Actor.createProxyConfiguration({
-          groups: requestedProxyGroups,
-          countryCode: input.proxyConfiguration?.apifyProxyCountry,
-      })) ?? null)
-    : null;
+const requestedProxyCountry = input.proxyConfiguration?.apifyProxyCountry;
+const proxyConfigurationsByMarketplace = new Map<MarketplaceCode, ProxyConfiguration | null>();
+if (useApifyProxy) {
+    for (const marketplace of runMarketplaces) {
+        proxyConfigurationsByMarketplace.set(
+            marketplace,
+            (await Actor.createProxyConfiguration({
+                groups: requestedProxyGroups,
+                countryCode: proxyCountryForMarketplace(marketplace, requestedProxyCountry),
+            })) ?? null,
+        );
+    }
+}
+const proxyConfiguration = proxyConfigurationsByMarketplace.get(input.marketplace) ?? null;
 const primaryUsesResidential = requestedProxyGroups.some((group) => group.toUpperCase() === 'RESIDENTIAL');
 let residentialProxyConfiguration = null;
+const residentialProxyConfigurationsByMarketplace = new Map<MarketplaceCode, ProxyConfiguration | null>();
 if (useApifyProxy && input.allowResidentialFallback && !primaryUsesResidential) {
-    try {
-        residentialProxyConfiguration = (await Actor.createProxyConfiguration({
-            groups: ['RESIDENTIAL'],
-            countryCode: input.proxyConfiguration?.apifyProxyCountry,
-        })) ?? null;
-    } catch (err) {
-        log.warning('residential fallback is unavailable for this account; continuing with the primary proxy tier', {
-            error: (err as Error).message,
-        });
+    for (const marketplace of runMarketplaces) {
+        try {
+            residentialProxyConfigurationsByMarketplace.set(
+                marketplace,
+                (await Actor.createProxyConfiguration({
+                    groups: ['RESIDENTIAL'],
+                    countryCode: proxyCountryForMarketplace(marketplace, requestedProxyCountry),
+                })) ?? null,
+            );
+        } catch (err) {
+            residentialProxyConfigurationsByMarketplace.set(marketplace, null);
+            log.warning('residential fallback is unavailable for a marketplace; continuing with the primary proxy tier', {
+                marketplace,
+                error: (err as Error).message,
+            });
+        }
     }
+    residentialProxyConfiguration = residentialProxyConfigurationsByMarketplace.get(input.marketplace) ?? null;
+}
+
+if (useApifyProxy) {
+    log.info('proxy country routing', {
+        explicitCountry: requestedProxyCountry ?? null,
+        marketplaces: Object.fromEntries(
+            [...runMarketplaces].map((marketplace) => [
+                marketplace,
+                proxyCountryForMarketplace(marketplace, requestedProxyCountry),
+            ]),
+        ),
+    });
 }
 
 if (externalProxyUrls.length > 0) {
@@ -172,7 +203,9 @@ const fetcher = new HttpFetcher({
         ? FETCHER_DEFAULTS.reliableResidentialBudgetRatio
         : FETCHER_DEFAULTS.residentialBudgetRatio,
     proxyConfiguration,
+    proxyConfigurationsByMarketplace,
     residentialProxyConfiguration,
+    residentialProxyConfigurationsByMarketplace,
     primaryProxyTier: externalProxyUrls.length > 0
         ? 'EXTERNAL'
         : proxyConfiguration === null

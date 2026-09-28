@@ -20,7 +20,7 @@ import { SessionPool, type Session } from 'crawlee';
 import { gotScraping, type Response } from 'got-scraping';
 import { getMarketplace } from '../amazon/marketplace-config/index.js';
 import { classifyPage } from '../amazon/parsers/page-type.js';
-import type { ProxyTier } from '../types/output.js';
+import type { MarketplaceCode, ProxyTier } from '../types/output.js';
 import { FAILURE_REASON, type FailureReason } from '../types/status.js';
 import { applyLocation, verifyLocation } from './location-primer.js';
 import type { FetchRequest, FetchResult, Fetcher } from './types.js';
@@ -32,8 +32,11 @@ export interface HttpFetcherOptions {
     residentialBudgetRatio: number;
     /** External proxy URLs supplied by the user keep traffic off the platform bill. */
     proxyConfiguration: ProxyConfiguration | null;
+    /** Marketplace-specific configurations keep mixed-market runs localized. */
+    proxyConfigurationsByMarketplace?: ReadonlyMap<MarketplaceCode, ProxyConfiguration | null>;
     /** Separate Apify RESIDENTIAL configuration used only after a block. */
     residentialProxyConfiguration: ProxyConfiguration | null;
+    residentialProxyConfigurationsByMarketplace?: ReadonlyMap<MarketplaceCode, ProxyConfiguration | null>;
     primaryProxyTier: Extract<ProxyTier, 'DATACENTER' | 'RESIDENTIAL' | 'EXTERNAL' | 'NONE'>;
     externalProxyUrls: string[];
     requestTimeoutSecs: number;
@@ -119,22 +122,44 @@ export class HttpFetcher implements Fetcher {
         }
     }
 
-    private residentialAllowed(): boolean {
+    private configurationFor(tier: ProxyTier, marketplace: MarketplaceCode): ProxyConfiguration | null {
+        if (tier === 'RESIDENTIAL') {
+            const residential = this.options.residentialProxyConfigurationsByMarketplace;
+            if (residential?.has(marketplace)) return residential.get(marketplace) ?? null;
+
+            // A user can select RESIDENTIAL as the primary group. In that case
+            // the primary per-marketplace map is already the residential map.
+            if (this.options.primaryProxyTier === 'RESIDENTIAL') {
+                const primary = this.options.proxyConfigurationsByMarketplace;
+                if (primary?.has(marketplace)) return primary.get(marketplace) ?? null;
+            }
+
+            return this.options.residentialProxyConfiguration ?? this.options.proxyConfiguration;
+        }
+
+        const primary = this.options.proxyConfigurationsByMarketplace;
+        if (primary?.has(marketplace)) return primary.get(marketplace) ?? null;
+        return this.options.proxyConfiguration;
+    }
+
+    private residentialAllowed(marketplace: MarketplaceCode): boolean {
         if (!this.options.allowResidentialFallback) return false;
-        if (this.options.residentialProxyConfiguration === null) return false;
+        if (this.configurationFor('RESIDENTIAL', marketplace) === null) return false;
         const budget = Math.max(1, Math.ceil(this.requests * this.options.residentialBudgetRatio));
         return this.residentialUsed < budget;
     }
 
-    private async proxyUrlFor(tier: ProxyTier, session: Session | undefined): Promise<string | undefined> {
+    private async proxyUrlFor(
+        tier: ProxyTier,
+        marketplace: MarketplaceCode,
+        session: Session | undefined,
+    ): Promise<string | undefined> {
         if (this.options.externalProxyUrls.length > 0) {
             const token = session?.id ?? String(this.requests);
             const idx = stableIndex(token, this.options.externalProxyUrls.length);
             return this.options.externalProxyUrls[idx];
         }
-        const config = tier === 'RESIDENTIAL'
-            ? (this.options.residentialProxyConfiguration ?? this.options.proxyConfiguration)
-            : this.options.proxyConfiguration;
+        const config = this.configurationFor(tier, marketplace);
         if (config === null) return undefined;
         const sessionId = session?.id ?? `t-${tier}-${this.requests}`;
         return config.newUrl(sessionId);
@@ -192,7 +217,7 @@ export class HttpFetcher implements Fetcher {
             lastProxyTier = tier;
 
             const session = await this.pool?.getSession();
-            const proxyUrl = await this.proxyUrlFor(tier, session);
+            const proxyUrl = await this.proxyUrlFor(tier, request.marketplace, session);
             if (tier === 'RESIDENTIAL') this.residentialUsed += 1;
 
             // C12: prime the delivery location once per session and reuse it.
@@ -325,9 +350,9 @@ export class HttpFetcher implements Fetcher {
                 if (tier === 'DATACENTER') {
                     if (!this.options.allowResidentialFallback) {
                         lastReason = FAILURE_REASON.RESIDENTIAL_FALLBACK_DISABLED;
-                    } else if (this.options.residentialProxyConfiguration === null) {
+                    } else if (this.configurationFor('RESIDENTIAL', request.marketplace) === null) {
                         lastReason = FAILURE_REASON.BLOCKED_AFTER_FALLBACK;
-                    } else if (!this.residentialAllowed()) {
+                    } else if (!this.residentialAllowed(request.marketplace)) {
                         lastReason = FAILURE_REASON.ESCALATION_BUDGET_EXHAUSTED;
                     } else {
                         tier = 'RESIDENTIAL';
