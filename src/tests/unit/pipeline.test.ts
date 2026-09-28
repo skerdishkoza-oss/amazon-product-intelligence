@@ -330,6 +330,32 @@ test('intelligence mode emits bounded offers and public seller profiles with exa
     assert.equal(validateRecord(record).valid, true);
 });
 
+test('blocked offers endpoint falls back to the visible Buy Box offer', async () => {
+    const h = harness();
+    const offersUrl = 'https://www.amazon.com/gp/product/ajax/ref=aod_f_new?asin=B0CX23V2ZK&pc=dp&experienceId=aodAjaxMain';
+    const fetcher = new ScriptedFetcher({ script: { [offersUrl]: BLOCKED } });
+    await run(h, {
+        marketplace: 'US',
+        asins: ['B0CX23V2ZK'],
+        mode: 'intelligence',
+        includeOffers: true,
+        maxOffersPerProduct: 2,
+    }, fetcher);
+
+    h.accounting.assertInvariant();
+    const record = products(h)[0];
+    assert.ok(record);
+    assert.equal(record.offers.status, 'EXTRACTED');
+    assert.equal(record.offers.items.length, 1);
+    assert.equal(record.offers.items[0]?.sellerId, 'A1EXAMPLE99');
+    assert.equal(record.offers.items[0]?.itemPrice?.amount, 24.99);
+    assert.equal(record.offers.items[0]?.sourceUrl, 'https://www.amazon.com/dp/B0CX23V2ZK');
+    assert.ok(record.quality.warnings.includes('OFFERS_FALLBACK_BUY_BOX'));
+    assert.deepEqual(fetcher.requests.map((request) => request.label), ['PRODUCT', 'OFFERS']);
+    assert.deepEqual(h.billing.stats().byEvent, { 'product-detail': 1, offer: 1 });
+    assert.equal(validateRecord(record).valid, true);
+});
+
 test('durable offer data is not lost when the cap stops ancillary billing', async () => {
     const h = harness(2);
     await run(h, {

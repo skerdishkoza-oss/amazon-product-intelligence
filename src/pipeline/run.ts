@@ -349,6 +349,48 @@ export async function runPipeline(deps: RunDeps): Promise<RunOutcome> {
 
         if (input.includeOffers) {
             offers = await fetchOffers(item.marketplace, parsed.asin ?? item.asin ?? '', warnings);
+            // Amazon frequently blocks the separate All Offers Display AJAX
+            // endpoint even when the product page itself succeeds. Preserve
+            // the visible Buy Box as a truthful one-offer fallback so a
+            // Competitive run still returns actionable seller and price data.
+            if (offers.status !== FIELD_STATUS.EXTRACTED && parsed.buyBox.present) {
+                const itemPrice = parsed.buyBox.price ?? parsed.pricing.currentPrice;
+                if (itemPrice !== null || parsed.buyBox.seller !== null) {
+                    const shippingPrice = parsed.availability.shippingPrice;
+                    const landedPrice = itemPrice !== null
+                        && (shippingPrice === null || shippingPrice.currency === itemPrice.currency)
+                        ? {
+                              amount: itemPrice.amount + (shippingPrice?.amount ?? 0),
+                              currency: itemPrice.currency,
+                              raw: shippingPrice === null
+                                  ? itemPrice.raw
+                                  : `${itemPrice.raw} + ${shippingPrice.raw}`,
+                          }
+                        : null;
+                    offers = {
+                        requested: true,
+                        totalCount: 1,
+                        items: [{
+                            sellerId: parsed.buyBox.sellerId,
+                            sellerName: parsed.buyBox.seller,
+                            condition: 'NEW',
+                            itemPrice,
+                            shippingPrice,
+                            landedPrice,
+                            primeEligible: parsed.availability.primeEligible,
+                            fulfillment: parsed.buyBox.fulfillment,
+                            deliveryText: parsed.availability.deliveryText,
+                            sellerRating: null,
+                            sellerFeedbackCount: null,
+                            sourceUrl: fetched.finalUrl,
+                            status: FIELD_STATUS.EXTRACTED,
+                        }],
+                        truncated: false,
+                        status: FIELD_STATUS.EXTRACTED,
+                    };
+                    warnings.push('OFFERS_FALLBACK_BUY_BOX');
+                }
+            }
         }
 
         if (input.includeSellerDetails) {
