@@ -251,9 +251,9 @@
             "default": true
         },
         "allowResidentialFallback": {
-            "title": "Allow residential proxy fallback",
+            "title": "Use residential reliability",
             "type": "boolean",
-            "description": "When off, the Actor never escalates to residential proxies and returns BLOCKED instead. Cheaper and fully predictable, at a higher block rate.",
+            "description": "Detail, Intelligence and Monitor modes use marketplace-pinned residential proxies by default for reliable localized results. Fast mode starts on the cheaper automatic tier and can escalate after a verified block. Turn this off for the cheapest path with a higher block rate.",
             "default": true
         },
         "proxyConfiguration": {

@@ -1,5 +1,8 @@
 ## 1.5 — 2026-09-22
 
+- Pinned residential proxy exits to each requested Amazon marketplace, including mixed-marketplace runs, so rendered currencies and catalogues remain localized.
+- Made marketplace-pinned residential acquisition the reliable default for Detail, Intelligence and Monitor modes; Fast mode keeps the cheaper automatic tier and bounded fallback.
+- Kept inferred country targeting off automatic datacenter groups that do not provide country-specific exits.
 - Added Essential, Catalog, Competitive and Custom data profiles with stable-schema block projection and per-row retrieval metadata.
 - Added the lower-cost `product-essential` billing event while preserving `product-basic`, `product-detail`, `product-check` and bounded ancillary events.
 - Added composable discovery filters for price, rating, review count, Prime, sponsored policy, demand and discount. Filtered cards never trigger detail-page requests or product events.

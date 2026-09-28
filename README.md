@@ -136,7 +136,7 @@ Compare current state with a previous Actor dataset:
 
 ## Proxies
 
-On Apify, leave `proxyConfiguration.useApifyProxy` enabled and the platform supplies the proxy connection; do not commit proxy credentials. The Actor begins with the configured primary tier and can move to a separate residential configuration after a verified block. Users may instead provide `proxyConfiguration.proxyUrls` to use their own proxy provider.
+On Apify, leave `proxyConfiguration.useApifyProxy` enabled and the platform supplies the proxy connection; do not commit proxy credentials. Detail, Intelligence and Monitor modes default to marketplace-pinned residential proxies so Amazon renders the correct localized catalogue and currency. Fast mode starts on the cheaper automatic tier and can move to a separate residential configuration after a verified block. Explicit proxy groups remain authoritative. Users may instead provide `proxyConfiguration.proxyUrls` to use their own proxy provider.
 
 ## What makes the output different
 
@@ -157,7 +157,7 @@ Successful rows are schema-validated and acknowledged by the dataset before thei
 ## Cost controls that are load-bearing
 
 - **Compression is mandatory.** Residential proxy is billed on wire bytes and Amazon HTML compresses about 4:1.
-- **Residential escalation is capped** per run as a share of requests. When the budget is spent, blocked inputs return `BLOCKED` rather than quietly spending more. `allowResidentialFallback: false` disables the tier entirely.
+- **Reliable full-product modes use residential proxies by default.** Detail, Intelligence and Monitor pin the exit country to the Amazon marketplace when residential use is allowed; Fast mode retains capped escalation from the cheaper automatic tier. `allowResidentialFallback: false` selects the cheapest path and accepts a higher block rate.
 - **The proxy tiers are separate configurations.** A blocked datacenter request can actually move to Apify's `RESIDENTIAL` group; the tier label is not just metadata.
 - **User-supplied proxies** in `proxyConfiguration.proxyUrls` keep that traffic on the customer's own provider account and off the platform bill.
 - **Not-found pages are never retried or escalated.** A dog page is an answer about the product, not a transport failure.

@@ -1,4 +1,5 @@
 import type { MarketplaceCode } from '../types/output.js';
+import type { RunMode } from '../types/input.js';
 
 /** ISO 3166-1 country used for proxy geolocation for each Amazon marketplace. */
 const MARKETPLACE_PROXY_COUNTRY: Record<MarketplaceCode, string> = {
@@ -35,4 +36,18 @@ export function proxyCountryForPrimary(
     return groups.some((group) => group.toUpperCase() === 'RESIDENTIAL')
         ? MARKETPLACE_PROXY_COUNTRY[marketplace]
         : undefined;
+}
+
+/**
+ * Full product modes favor reliable residential acquisition by default. Fast
+ * discovery retains the cheaper automatic tier. An explicit group selection
+ * always wins, and disabling residential fallback also disables this default.
+ */
+export function proxyGroupsForRun(
+    configuredGroups: readonly string[],
+    mode: RunMode,
+    allowResidential: boolean,
+): string[] {
+    if (configuredGroups.length > 0) return [...configuredGroups];
+    return mode !== 'fast' && allowResidential ? ['RESIDENTIAL'] : [];
 }

@@ -10,7 +10,11 @@ import { Actor, log, type ProxyConfiguration } from 'apify';
 import { ApifyChargingBackend } from './billing/apify-backend.js';
 import { BillingEvents, NoopChargingBackend } from './billing/events.js';
 import { FETCHER_DEFAULTS, HttpFetcher } from './fetch/http-fetcher.js';
-import { proxyCountryForMarketplace, proxyCountryForPrimary } from './fetch/proxy-country.js';
+import {
+    proxyCountryForMarketplace,
+    proxyCountryForPrimary,
+    proxyGroupsForRun,
+} from './fetch/proxy-country.js';
 import { extractDatasetInputs } from './input/dataset-ingest.js';
 import { InputError, validateInput } from './input/validate.js';
 import { classifyUrl } from './input/normalizer.js';
@@ -135,8 +139,15 @@ if (!isPaid) log.info('no charging configured for this run; billing events are r
  */
 const externalProxyUrls = input.proxyConfiguration?.proxyUrls ?? [];
 const useApifyProxy = externalProxyUrls.length === 0 && input.proxyConfiguration?.useApifyProxy !== false;
-const requestedProxyGroups = input.proxyConfiguration?.apifyProxyGroups ?? [];
+const configuredProxyGroups = input.proxyConfiguration?.apifyProxyGroups ?? [];
+const requestedProxyGroups = proxyGroupsForRun(
+    configuredProxyGroups,
+    input.mode,
+    input.allowResidentialFallback && useApifyProxy,
+);
 const requestedProxyCountry = input.proxyConfiguration?.apifyProxyCountry;
+const defaultedResidentialPrimary = configuredProxyGroups.length === 0
+    && requestedProxyGroups.some((group) => group.toUpperCase() === 'RESIDENTIAL');
 const primaryUsesResidential = requestedProxyGroups.some((group) => group.toUpperCase() === 'RESIDENTIAL');
 const proxyConfigurationsByMarketplace = new Map<MarketplaceCode, ProxyConfiguration | null>();
 if (useApifyProxy) {
@@ -177,6 +188,7 @@ if (useApifyProxy && input.allowResidentialFallback && !primaryUsesResidential) 
 if (useApifyProxy) {
     log.info('proxy country routing', {
         explicitCountry: requestedProxyCountry ?? null,
+        defaultedResidentialPrimary,
         primaryCountryTargeting: primaryUsesResidential || requestedProxyCountry !== undefined,
         marketplaces: Object.fromEntries(
             [...runMarketplaces].map((marketplace) => [
